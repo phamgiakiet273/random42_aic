@@ -1,0 +1,125 @@
+"""Score-fusion helpers for combining/merging ranked results from two vector searches."""
+
+from __future__ import annotations
+
+from collections import defaultdict
+
+
+def merge_scores(list_res_A, list_res_B):
+    """Fold matching list_res_A scores (by video_name + nearby keyframe_id) into list_res_B and resort."""
+    idx_results = {}
+    for idx_B, record_B in enumerate(list_res_B):
+        max_temp_score = 0.0
+        video_name = record_B["video_name"]
+        keyframe_id = record_B["keyframe_id"]
+        for idx_A, record_A in enumerate(list_res_A):
+            if (
+                record_A[-1]["video_name"] == record_B["video_name"]
+                and int(record_B["keyframe_id"]) - int(record_A[-1]["keyframe_id"]) >= 1
+                and int(record_B["keyframe_id"]) - int(record_A[-1]["keyframe_id"])
+                <= 1000
+            ):
+                if float(record_A[-1]["score"]) > max_temp_score:
+                    max_temp_score = float(record_A[-1]["score"])
+                    idx_results[(video_name, keyframe_id)] = idx_A
+
+        list_res_B[idx_B]["score"] = float(list_res_B[idx_B]["score"]) + max_temp_score
+
+    # resort by score
+    sorted_list = sorted(list_res_B, key=lambda x: x["score"], reverse=True)
+    results = []
+    for record_B in sorted_list:
+        video_name = record_B["video_name"]
+        keyframe_id = record_B["keyframe_id"]
+        if (video_name, keyframe_id) not in idx_results:
+            continue
+        idx_A = idx_results[(video_name, keyframe_id)]
+        record_A = list_res_A[idx_A]
+        results.append(record_A + [record_B])
+
+    max_dict = {}
+    for item in results:
+        key = str(item[-2]["video_name"]) + "_" + str(item[-2]["keyframe_id"])
+        if key not in max_dict or item[-1]["score"] > max_dict[key][-1]["score"]:
+            max_dict[key] = item
+    results = list(max_dict.values())
+
+    return results
+
+
+def merge_scores_reverse(list_res_A, list_res_B):
+    """Same as merge_scores but folds list_res_B scores into list_res_A instead."""
+    idx_results = {}
+    for idx_A, record_A in enumerate(list_res_A):
+        max_temp_score = 0.0
+        video_name = record_A["video_name"]
+        keyframe_id = record_A["keyframe_id"]
+        for idx_B, record_B in enumerate(list_res_B):
+            if (
+                record_A["video_name"] == record_B[0]["video_name"]
+                and int(record_B[0]["keyframe_id"]) - int(record_A["keyframe_id"]) >= 1
+                and int(record_B[0]["keyframe_id"]) - int(record_A["keyframe_id"])
+                <= 1000
+            ):
+                if float(record_B[0]["score"]) > max_temp_score:
+                    max_temp_score = float(record_B[0]["score"])
+                    idx_results[(video_name, keyframe_id)] = idx_B
+
+        list_res_A[idx_A]["score"] = float(record_A["score"]) + max_temp_score
+
+    # resort by score
+    sorted_list = sorted(list_res_A, key=lambda x: x["score"], reverse=True)
+    results = []
+    for record_A in sorted_list:
+        video_name = record_A["video_name"]
+        keyframe_id = record_A["keyframe_id"]
+        if (video_name, keyframe_id) not in idx_results:
+            continue
+        idx_B = idx_results[(video_name, keyframe_id)]
+        record_B = list_res_B[idx_B]
+        results.append([record_A] + record_B)
+
+    max_dict = {}
+    for item in results:
+        key = str(item[1]["video_name"]) + "_" + str(item[1]["keyframe_id"])
+        if key not in max_dict or item[0]["score"] > max_dict[key][0]["score"]:
+            max_dict[key] = item
+    results = list(max_dict.values())
+
+    return results
+
+
+def preprocess_object_dict(object_dict):
+    """Flatten {object_name: [detections]} into {(video, frame): [detections]}."""
+    nested = defaultdict(lambda: defaultdict(list))
+    for obj_name, det_list in object_dict.items():
+        for det in det_list:
+            vid = det["video"]
+            frm = int(det["frame"])
+            nested[vid][frm].append(
+                {
+                    "object": obj_name,
+                    "conf": det["conf"],
+                    "bbox": det["bbox"],
+                }
+            )
+
+    return {
+        (vid, frm): objs
+        for vid, frames in nested.items()
+        for frm, objs in frames.items()
+    }
+
+
+def preprocessing_text(model, text):
+    """Extract a flat float32 text embedding from `model`."""
+    text_feat_arr = model.get_text_features(text)
+    text_feat_arr = text_feat_arr.reshape(1, -1).astype("float32")
+    return text_feat_arr[0]
+
+
+def preprocessing_image(model, image):
+    """Extract a flat float32 image embedding from `model`."""
+    image_feat_arr = model.get_image_features(image)
+    image_feat_arr = image_feat_arr.reshape(1, -1).astype("float32")
+    return image_feat_arr[0]
