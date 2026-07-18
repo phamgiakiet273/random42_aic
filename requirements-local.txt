@@ -1,0 +1,14 @@
+# Lightweight deps for the `hub` gateway only (Dockerfile.local / docker-compose-local.yml).
+# hub is a pure HTTP proxy in front of the services in docker-compose-server.yml -- it never
+# imports torch/transformers/qdrant-client, so none of that needs to be installed here.
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+starlette
+python-multipart
+jinja2
+httpx
+pydantic==2.9.2
+pydantic-settings==2.6.1
+python-dotenv
+ujson
+loguru

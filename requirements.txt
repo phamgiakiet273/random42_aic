@@ -1,0 +1,51 @@
+# --- Web framework (all 8 services) ---
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+starlette
+python-multipart
+jinja2
+httpx
+pydantic==2.9.2
+pydantic-settings==2.6.1
+python-dotenv
+ujson
+
+# --- Logging ---
+loguru
+
+# --- Vector search ---
+qdrant-client==1.14.3
+
+# --- ML / CLIP models (siglip_alpha, siglip_beta, metaclip services) ---
+torch==2.6.0
+torchvision
+transformers==4.51.3
+open-clip-torch
+numpy
+Pillow
+pillow-avif-plugin
+tqdm
+
+# --- pre_processing: shot detection / feature extraction / object detection ---
+opencv-python
+ultralytics
+einops
+scipy
+imagedominantcolor
+
+# --- pre_processing: speech-to-text ---
+pyctcdecode
+kenlm
+pyannote.audio
+pydub
+ffmpeg-python
+py_vncorenlp
+
+# --- pre_processing: VLM extractor (web search + article scraping) ---
+googlesearch-python
+rank-bm25
+trafilatura
+
+# --- Misc HTTP ---
+requests
+urllib3
