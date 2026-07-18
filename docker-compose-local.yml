@@ -1,0 +1,17 @@
+# Runs ONLY the `hub` gateway locally -- the lightweight public-facing UI/proxy.
+# All heavy backend services (CLIP models, Qdrant, rerank, util, submission, result_manager)
+# run remotely via docker-compose-server.yml; point .env's `*_HOST_PUBLIC` / `NGINX_*_HOST`
+# vars at that server before starting this.
+services:
+  hub:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    env_file: .env
+    environment:
+      SERVICE: hub
+    volumes:
+      - ./src:/app/src
+      - ./logs:/app/logs
+    ports: ["9021:9021"]
+    restart: unless-stopped

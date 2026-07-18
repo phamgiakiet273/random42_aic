@@ -1,0 +1,28 @@
+# Server image for every service EXCEPT `hub` (siglip_alpha/beta, metaclip, rerank, util,
+# submission, result_manager) -- the GPU/vector-DB-facing backend. Pinned deps baked in,
+# no bind mounts, no --reload. `hub` runs separately via Dockerfile.local (see docker-compose-local.yml).
+FROM nvidia/cuda:12.8.0-runtime-ubuntu22.04 AS base
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3.11 python3-pip ffmpeg \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -s /usr/bin/python3.11 /usr/bin/python
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+RUN useradd --create-home --shell /bin/bash appuser \
+    && chown -R appuser:appuser /app
+USER appuser
+
+# SERVICE picks which of the 8 apps to serve (see src/main.py); host/port/workers come from .env via Settings.
+CMD ["python", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0"]

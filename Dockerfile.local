@@ -1,0 +1,18 @@
+# Local dev image for the `hub` gateway ONLY. hub is a pure HTTP proxy in front of the
+# GPU-heavy services (CLIP models, Qdrant) and the rest of the backend, which run via
+# Dockerfile.server / docker-compose-server.yml (on a server with a GPU). No CUDA/torch here.
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    SERVICE=hub
+
+WORKDIR /app
+
+COPY requirements-local.txt .
+RUN pip install --no-cache-dir -r requirements-local.txt
+
+COPY . .
+
+CMD ["python", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--reload"]

@@ -1,0 +1,97 @@
+x-app: &app
+  build:
+    context: .
+    dockerfile: Dockerfile.server
+  image: random42-aic:latest
+  env_file: .env
+  volumes:
+    - ./data:/app/data
+    - ./logs:/app/logs
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "50m"
+      max-file: "5"
+
+# NOTE: `hub` is NOT in this file -- it runs locally via docker-compose-local.yml and reaches
+# the services below over the network using their `*_HOST_PUBLIC` URLs from .env.
+services:
+  result_manager:
+    <<: *app
+    environment:
+      SERVICE: result_manager
+    ports: ["9022:9022"]
+
+  submission:
+    <<: *app
+    environment:
+      SERVICE: submission
+    ports: ["9024:9024"]
+
+  util:
+    <<: *app
+    environment:
+      SERVICE: util
+    ports: ["9025:9025"]
+
+  rerank:
+    <<: *app
+    environment:
+      SERVICE: rerank
+    ports: ["9126:9126"]
+
+  siglip_alpha:
+    <<: *app
+    environment:
+      SERVICE: siglip_alpha
+    ports: ["9029:9029"]
+    deploy:
+      resources:
+        reservations:
+          devices: [{driver: nvidia, count: 1, capabilities: [gpu]}]
+    depends_on: [qdrant-siglip-alpha]
+
+  siglip_beta:
+    <<: *app
+    environment:
+      SERVICE: siglip_beta
+    ports: ["9030:9030"]
+    deploy:
+      resources:
+        reservations:
+          devices: [{driver: nvidia, count: 1, capabilities: [gpu]}]
+    depends_on: [qdrant-siglip-beta]
+
+  metaclip:
+    <<: *app
+    environment:
+      SERVICE: metaclip
+    ports: ["9031:9031"]
+    deploy:
+      resources:
+        reservations:
+          devices: [{driver: nvidia, count: 1, capabilities: [gpu]}]
+    depends_on: [qdrant-metaclip]
+
+  qdrant-siglip-alpha:
+    image: qdrant/qdrant:v1.14.3
+    volumes: ["./data/qdrant_storage/siglip_alpha:/qdrant/storage"]
+    restart: unless-stopped
+
+  qdrant-siglip-beta:
+    image: qdrant/qdrant:v1.14.3
+    volumes: ["./data/qdrant_storage/siglip_beta:/qdrant/storage"]
+    restart: unless-stopped
+
+  qdrant-metaclip:
+    image: qdrant/qdrant:v1.14.3
+    volumes: ["./data/qdrant_storage/metaclip:/qdrant/storage"]
+    restart: unless-stopped
+
+  media_server:
+    image: nginx:alpine
+    ports: ["9027:80"]
+    volumes:
+      - ./data:/usr/share/nginx/html:ro
+    restart: unless-stopped
