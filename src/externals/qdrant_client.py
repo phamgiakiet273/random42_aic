@@ -95,13 +95,11 @@ class QdrantSearchClient:
                     ),
                 ),
                 optimizers_config=models.OptimizersConfigDiff(
-                    default_segment_number=16,
-                    max_segment_size=20000000,
-                    indexing_threshold=1000,
+                    default_segment_number=4,
+                    indexing_threshold=20000,
                 ),
                 on_disk_payload=True,
-                shard_number=90,
-                # https://medium.com/@benitomartin/balancing-accuracy-and-speed-with-qdrant-hyperparameters-hydrid-search-and-semantic-caching-part-84b26037e594
+                shard_number=2,
                 hnsw_config=HnswConfigDiff(
                     m=16,
                     ef_construct=100,
@@ -182,7 +180,9 @@ class QdrantSearchClient:
                                 "video_name": video_name + ".mp4",
                                 "frame_name": frm,
                                 "fps": fps,
-                                "s2t": s2t_map[frame_list[idx]],
+                                "s2t": s2t_map.get(frame_list[idx], "")
+                                if isinstance(s2t_map, dict)
+                                else "",
                                 "is_unique": not unique[str(frm)],
                                 "object": [],
                                 "frame_class": shot[frame_list[idx]][0]
@@ -334,16 +334,12 @@ class QdrantSearchClient:
 
         return return_result
 
-    def deleteDatabase(self):
+    def delete_database(self):
         self.client.delete_collection(collection_name=self.collection_name)
 
-    def getCount(self):
-        for idx, item in enumerate(
-            self.client.get_collection(collection_name=self.collection_name)
-        ):
-            if idx == 4:
-                return int(item[1])
-        return 0
+    def get_count(self) -> int:
+        info = self.client.get_collection(collection_name=self.collection_name)
+        return info.points_count or 0
 
     def search_temporal(
         self,
@@ -538,7 +534,7 @@ class QdrantSearchClient:
                 count += 1
             else:
                 score_group[group[key]] = float(item["score"])
-                count = 0
+                count = 1
 
         return sorted(
             return_result,

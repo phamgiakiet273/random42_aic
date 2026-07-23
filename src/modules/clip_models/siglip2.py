@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import threading
 
 import numpy as np
 import torch
@@ -13,7 +14,11 @@ MODEL_NAME = "google/siglip2-giant-opt-patch16-384"
 
 
 class Siglip2Model:
-    """Wraps SigLIP2 for L2-normalized image/text embeddings on a dedicated GPU."""
+    """Wraps SigLIP2 for L2-normalized image/text embeddings on a dedicated GPU.
+
+    Thread-safe: a lock serializes GPU forward passes so concurrent requests
+    (e.g. 4 users querying simultaneously) don't corrupt CUDA state or OOM.
+    """
 
     def __init__(
         self,
@@ -22,13 +27,14 @@ class Siglip2Model:
         hf_token: str | None = None,
         use_cpu: bool = False,
     ) -> None:
-        os.environ["TRANSFORMERS_CACHE"] = cache_dir
+        os.environ["HF_HOME"] = cache_dir
         os.environ["CUDA_VISIBLE_DEVICES"] = cuda_visible_devices
 
         self.device = "cpu" if use_cpu else "cuda"
+        self._lock = threading.Lock()
 
         self.processor = AutoProcessor.from_pretrained(
-            MODEL_NAME, device_map="auto", use_fast=True, token=hf_token
+            MODEL_NAME, use_fast=True, token=hf_token
         )
         self.model = (
             AutoModel.from_pretrained(MODEL_NAME, token=hf_token).eval().to(self.device)
@@ -42,9 +48,13 @@ class Siglip2Model:
             return_tensors="pt",
             truncation=True,
         ).to(self.device)
-        with torch.no_grad(), torch.amp.autocast("cuda"):
-            image_features = self.model.get_image_features(**inputs)
-            image_features /= image_features.norm(dim=-1, keepdim=True)
+        with self._lock:
+            with (
+                torch.no_grad(),
+                torch.amp.autocast(self.device, enabled=(self.device != "cpu")),
+            ):
+                image_features = self.model.get_image_features(**inputs)
+                image_features /= image_features.norm(dim=-1, keepdim=True)
         return image_features.cpu().detach().numpy()
 
     def get_text_features(self, text: str) -> np.ndarray:
@@ -56,7 +66,11 @@ class Siglip2Model:
             return_tensors="pt",
             truncation=True,
         ).to(self.device)
-        with torch.no_grad(), torch.amp.autocast("cuda"):
-            text_features = self.model.get_text_features(**inputs)
-            text_features /= text_features.norm(dim=-1, keepdim=True)
+        with self._lock:
+            with (
+                torch.no_grad(),
+                torch.amp.autocast(self.device, enabled=(self.device != "cpu")),
+            ):
+                text_features = self.model.get_text_features(**inputs)
+                text_features /= text_features.norm(dim=-1, keepdim=True)
         return text_features.cpu().detach().numpy()

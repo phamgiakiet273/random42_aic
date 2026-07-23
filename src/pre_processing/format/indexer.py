@@ -11,7 +11,7 @@ import ujson
 def indexing(
     dataset_path: str, output_file: str, entire: bool = True, entire_folder: str = None
 ) -> None:
-    visited = []
+    visited = set()
     index_dict = {}
     for file in Path(dataset_path).glob("**/*.jpg"):
         if not file.is_file():  # Skip directories
@@ -20,7 +20,7 @@ def indexing(
         folder_name = str(pathlib.PurePath(file).parent)
         if video_name in visited:
             continue
-        visited.append(video_name)
+        visited.add(video_name)
         print(video_name)
         list_image = []
 
@@ -28,8 +28,8 @@ def indexing(
             real_image_name = str(pathlib.PurePath(image).stem)
             list_image.append(real_image_name)
         list_image = sorted(list_image)
-        for item in list_image:
-            index_dict[(video_name, item)] = list_image.index(item)
+        for idx, item in enumerate(list_image):
+            index_dict[(video_name, item)] = idx
 
         if entire is False:
             save_dict = OrderedDict()

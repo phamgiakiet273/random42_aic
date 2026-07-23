@@ -50,7 +50,9 @@ services:
       resources:
         reservations:
           devices: [{driver: nvidia, count: 1, capabilities: [gpu]}]
-    depends_on: [qdrant-siglip-alpha]
+    depends_on:
+      qdrant-siglip-alpha:
+        condition: service_healthy
 
   siglip_beta:
     <<: *app
@@ -61,7 +63,9 @@ services:
       resources:
         reservations:
           devices: [{driver: nvidia, count: 1, capabilities: [gpu]}]
-    depends_on: [qdrant-siglip-beta]
+    depends_on:
+      qdrant-siglip-beta:
+        condition: service_healthy
 
   metaclip:
     <<: *app
@@ -72,22 +76,42 @@ services:
       resources:
         reservations:
           devices: [{driver: nvidia, count: 1, capabilities: [gpu]}]
-    depends_on: [qdrant-metaclip]
+    depends_on:
+      qdrant-metaclip:
+        condition: service_healthy
 
   qdrant-siglip-alpha:
     image: qdrant/qdrant:v1.14.3
     volumes: ["./data/qdrant_storage/siglip_alpha:/qdrant/storage"]
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:6333/readyz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   qdrant-siglip-beta:
     image: qdrant/qdrant:v1.14.3
     volumes: ["./data/qdrant_storage/siglip_beta:/qdrant/storage"]
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:6333/readyz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   qdrant-metaclip:
     image: qdrant/qdrant:v1.14.3
     volumes: ["./data/qdrant_storage/metaclip:/qdrant/storage"]
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:6333/readyz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   media_server:
     image: nginx:alpine

@@ -109,12 +109,24 @@ class ClipSearchService:
         )
 
         dummy_query = np.load(dummy_vector_path).reshape(1, -1).astype("float32")[0]
-        logger.info("Warming up with dummy query")
-        # Legacy called `self.qdrant.search(dummy_query, 3, "", "", "")` positionally,
-        # which passed `""` as frame_class_filter (should be a list). Use keywords
-        # against the actual signature instead of replicating that bug.
-        self.qdrant.search(dummy_query, k=3)
-        logger.info("Dummy query finished, ready to use!")
+
+        # --- Full warm-up: GPU model + Qdrant cache ---
+        # 1. Warm GPU: first CUDA call initializes context + JIT compiles kernels (~1-2s)
+        logger.info("Warming up GPU model (first inference triggers CUDA init)...")
+        _ = preprocessing_text(self.model, "a person walking on the street")
+        logger.info("GPU model warm-up complete")
+
+        # 2. Warm Qdrant: k=100 forces payload reads across shards → OS caches disk pages
+        logger.info("Warming up Qdrant cache (loading payloads into OS page cache)...")
+        self.qdrant.search(dummy_query, k=100)
+        # Second query with negated vector hits different shards/segments
+        self.qdrant.search(
+            (-dummy_query).tolist()
+            if isinstance(dummy_query, np.ndarray)
+            else [-x for x in dummy_query],
+            k=100,
+        )
+        logger.info("Qdrant cache warm-up complete, ready to use!")
 
         return APIResponse(
             status=HTTPStatus.OK.value,
