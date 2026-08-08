@@ -1,6 +1,9 @@
-export default function Thumbnail({ video }) {
+export default function Thumbnail({ video, onClick }) {
   return (
-    <div className="card bg-base-100 shadow-sm hover:shadow-md transition-shadow cursor-pointer">
+    <div
+      className="card bg-base-100 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+      onClick={onClick}
+    >
       <figure>
         <img src={video.thumbnail_url} alt={video.title} className="aspect-video w-full object-cover" />
       </figure>

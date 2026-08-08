@@ -1,6 +1,3 @@
-// Query configuration panel — keyword/image input plus the model config
-// that gets passed to the AI + backend on search. Not wired to a real
-// search call yet (see docs/ui-react-rewrite-plan.md) — UI only for now.
 import { useState } from 'react'
 
 const MODELS = [
