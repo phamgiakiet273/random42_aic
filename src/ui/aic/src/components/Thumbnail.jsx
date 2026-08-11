@@ -5,7 +5,12 @@ export default function Thumbnail({ video, onClick }) {
       onClick={onClick}
     >
       <figure>
-        <img src={video.thumbnail_url} alt={video.title} className="aspect-video w-full object-cover" />
+        <img
+          src={video.thumbnail_url}
+          alt={video.title}
+          loading="lazy"
+          className="aspect-video w-full object-cover"
+        />
       </figure>
       <div className="card-body p-3 gap-0.5">
         <p className="text-sm font-medium truncate">{video.title}</p>

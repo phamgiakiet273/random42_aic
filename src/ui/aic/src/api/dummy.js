@@ -1,7 +1,4 @@
-// Dummy read fixture standing in for the (not-yet-live) backend.
-// See docs/ui-react-rewrite-plan.md §3.1 — the envelope shape here matches
-// what the real backend will return, so hubApi.js can swap this out for a
-// real fetch call later without changing its own signature.
+
 
 const COLORS = ['#6366f1', '#ec4899', '#22c55e', '#f97316', '#06b6d4', '#a855f7', '#ef4444', '#0ea5e9']
 
@@ -31,5 +28,5 @@ const records = COLORS.map((color, i) => {
 })
 
 export async function list() {
-  return { code: 200, message: 'success', data: records }
+  return { status: 200, message: 'Success', data: records }
 }
