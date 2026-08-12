@@ -1,11 +1,26 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { list } from '../api/dummy'
+import { useSettingsStore } from '../stores/settingsStore'
 import Thumbnail from './Thumbnail'
 import FrameDetailModal from './FrameDetailModal'
+import Pagination from './Pagination'
 
 export default function VideoGrid() {
   const [selected, setSelected] = useState(null)
+  const [page, setPage] = useState(1)
+  const resultsPerPage = useSettingsStore((s) => s.resultsPerPage)
+  const thumbnailSize = useSettingsStore((s) => s.thumbnailSize)
+
+  // Reset to page 1 whenever the page size changes, so a stale page index
+  // never goes out of range. Adjusting state during render (React's
+  // recommended pattern for this) instead of an effect avoids an extra
+  // commit/re-render pass.
+  const [prevResultsPerPage, setPrevResultsPerPage] = useState(resultsPerPage)
+  if (resultsPerPage !== prevResultsPerPage) {
+    setPrevResultsPerPage(resultsPerPage)
+    setPage(1)
+  }
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['videos'],
@@ -27,14 +42,28 @@ export default function VideoGrid() {
     return <div className="alert alert-error">Failed to load videos.</div>
   }
 
+  const totalPages = Math.max(1, Math.ceil(data.length / resultsPerPage))
+  const pageItems = data.slice((page - 1) * resultsPerPage, page * resultsPerPage)
+
   return (
-    <>
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-4">
-        {data.map((video) => (
+    <div className="flex flex-col gap-4">
+      <div
+        className="grid gap-4"
+        style={{ gridTemplateColumns: `repeat(auto-fill, minmax(min(${thumbnailSize}px, 45vw), 1fr))` }}
+      >
+        {pageItems.map((video) => (
           <Thumbnail key={video.id} video={video} onClick={() => setSelected(video)} />
         ))}
       </div>
+      <div className="flex justify-center">
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          onPrev={() => setPage((p) => Math.max(1, p - 1))}
+          onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+        />
+      </div>
       <FrameDetailModal video={selected} onClose={() => setSelected(null)} />
-    </>
+    </div>
   )
 }

@@ -32,7 +32,7 @@ export default function QueryPanel() {
   }
 
   return (
-    <div className="card bg-base-100 shadow-sm h-full flex flex-col overflow-y-auto">
+    <div className="card bg-base-100 shadow-sm">
       <form className="card-body gap-4" onSubmit={handleSubmit}>
         <h2 className="card-title text-base">Query</h2>
 

@@ -1,5 +1,7 @@
 import VideoGrid from './components/VideoGrid'
 import QueryPanel from './components/QueryPanel'
+import SettingsPanel from './components/SettingsPanel'
+import FiltersPanel from './components/FiltersPanel'
 
 export default function App() {
   return (
@@ -11,8 +13,10 @@ export default function App() {
         <section className="flex-1 min-w-0">
           <VideoGrid />
         </section>
-        <aside className="w-full lg:w-96 lg:shrink-0 h-[70vh] lg:h-[calc(100vh-6rem)]">
+        <aside className="w-full lg:w-96 lg:shrink-0 flex flex-col gap-4 lg:h-[calc(100vh-6rem)] lg:overflow-y-auto">
           <QueryPanel />
+          <SettingsPanel />
+          <FiltersPanel />
         </aside>
       </main>
     </div>

@@ -16,8 +16,11 @@ function placeholderThumbnail(label, color) {
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
 }
 
-const records = COLORS.map((color, i) => {
+const RECORD_COUNT = 100
+
+const records = Array.from({ length: RECORD_COUNT }, (_, i) => {
   const index = i + 1
+  const color = COLORS[i % COLORS.length]
   return {
     id: index,
     video_id: `L01_V${String(index).padStart(3, '0')}`,
@@ -29,4 +32,8 @@ const records = COLORS.map((color, i) => {
 
 export async function list() {
   return { status: 200, message: 'Success', data: records }
+}
+
+export async function listVideoNames() {
+  return { status: 200, message: 'Success', data: records.map((record) => record.video_id) }
 }
