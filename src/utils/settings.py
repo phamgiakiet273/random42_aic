@@ -128,6 +128,45 @@ class Settings(BaseSettings):
         "data/example/cat_metaclip.npy", alias="METACLIP_DUMMY_VECTOR_PATH"
     )
 
+    # --- Expert Fusion (SigLIP2 + jina-clip-v2 + learned gating) ---
+    # Serves BOTH experts in one process: encode with both, search both Qdrant
+    # collections, fuse with the trained gating MLP. See
+    # src/services/fusion_model_service.py.
+    fusion_model_host: str = Field("0.0.0.0", alias="FUSION_MODEL_HOST")
+    fusion_model_port: int = Field(9032, alias="FUSION_MODEL_PORT")
+    fusion_model_host_public: str = Field(
+        "http://localhost:9032", alias="FUSION_MODEL_HOST_PUBLIC"
+    )
+    fusion_model_max_workers: int = Field(1, alias="FUSION_MODEL_MAX_WORKERS")
+    fusion_model_cuda_visible_devices: str = Field(
+        "0", alias="FUSION_MODEL_CUDA_VISIBLE_DEVICES"
+    )
+    fusion_model_qdrant_url: str = Field(
+        "http://localhost", alias="FUSION_MODEL_QDRANT_URL"
+    )
+    fusion_model_qdrant_port: int = Field(6333, alias="FUSION_MODEL_QDRANT_PORT")
+    fusion_model_qdrant_grpc_port: int = Field(
+        6334, alias="FUSION_MODEL_QDRANT_GRPC_PORT"
+    )
+    fusion_model_database_a: str = Field(
+        "SIGLIP_V2", alias="FUSION_MODEL_DATABASE_A"
+    )
+    fusion_model_database_b: str = Field(
+        "EXPERT_B_V1", alias="FUSION_MODEL_DATABASE_B"
+    )
+    fusion_model_gating_ckpt: str = Field(
+        "data/weights/gating_mlp_v3.pt", alias="FUSION_MODEL_GATING_CKPT"
+    )
+    # "context" = transparent overlap-aware rule (default, see context_rule_wb);
+    # "mlp" = learned gating MLP (kept for experiments — v3 is collapsed).
+    fusion_model_gating_mode: str = Field(
+        "context", alias="FUSION_MODEL_GATING_MODE"
+    )
+    fusion_model_rrf_blend: float = Field(
+        0.0, alias="FUSION_MODEL_RRF_BLEND"
+    )
+    fusion_model_top_k: int = Field(100, alias="FUSION_MODEL_TOP_K")
+
     # --- Rerank (dominant-color re-sort) ---
     rerank_host: str = Field("0.0.0.0", alias="RERANK_HOST")
     rerank_port: int = Field(9126, alias="RERANK_PORT")

@@ -25,6 +25,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 
 from src.apis.base import create_app
 from src.apis.clip_api import build_router as build_clip_router
+from src.apis.fusion_model_api import build_router as build_fusion_model_router
 from src.apis.hub_api import build_router as build_hub_router
 from src.apis.rerank_api import build_router as build_rerank_router
 from src.apis.result_manager_api import build_router as build_result_manager_router
@@ -32,9 +33,11 @@ from src.apis.submission_api import build_router as build_submission_router
 from src.apis.util_api import build_router as build_util_router
 from src.externals.qdrant_client import QdrantSearchClient
 from src.externals.translate_client import TranslateClient
+from src.modules.clip_models.jina_clip_v2 import JinaClipV2Model
 from src.modules.clip_models.metaclip import MetaclipModel
 from src.modules.clip_models.siglip2 import Siglip2Model
 from src.services.clip_service import ClipSearchService
+from src.services.fusion_model_service import FusionModelSearchService
 from src.services.hub_service import HubGatewayService
 from src.services.rerank_service import RerankService
 from src.services.result_manager_service import ResultManagerService
@@ -48,6 +51,7 @@ _KNOWN_SERVICES = (
     "siglip_alpha",
     "siglip_beta",
     "metaclip",
+    "fusion_model",
     "rerank",
     "submission",
     "util",
@@ -159,6 +163,44 @@ def _build_util_app() -> FastAPI:
     return app
 
 
+def _build_fusion_model_app(settings: Settings) -> FastAPI:
+    """One process serving BOTH experts + gating MLP (see FusionModelSearchService)."""
+    siglip = Siglip2Model(
+        settings.fusion_model_cuda_visible_devices,
+        settings.transformers_cache,
+        settings.huggingface_hub_token,
+    )
+    jina = JinaClipV2Model(
+        cuda_visible_devices=settings.fusion_model_cuda_visible_devices,
+        cache_dir=settings.transformers_cache,
+    )
+    qdrant_a = QdrantSearchClient(
+        settings.fusion_model_qdrant_url,
+        settings.fusion_model_qdrant_port,
+        settings.fusion_model_qdrant_grpc_port,
+        settings.fusion_model_database_a,
+    )
+    qdrant_b = QdrantSearchClient(
+        settings.fusion_model_qdrant_url,
+        settings.fusion_model_qdrant_port,
+        settings.fusion_model_qdrant_grpc_port,
+        settings.fusion_model_database_b,
+    )
+    service = FusionModelSearchService(
+        siglip,
+        jina,
+        qdrant_a,
+        qdrant_b,
+        gating_ckpt=settings.fusion_model_gating_ckpt,
+        gating_mode=settings.fusion_model_gating_mode,
+        rrf_blend=settings.fusion_model_rrf_blend,
+        top_k=settings.fusion_model_top_k,
+    )
+    app = create_app()
+    app.include_router(build_fusion_model_router(service))
+    return app
+
+
 def build_app(service_name: str, settings: Settings) -> FastAPI:
     if service_name == "hub":
         app = _build_hub_app()
@@ -198,6 +240,8 @@ def build_app(service_name: str, settings: Settings) -> FastAPI:
             settings.siglip_v2_b_qdrant_port,
             settings.siglip_v2_b_qdrant_grpc_port,
         )
+    elif service_name == "fusion_model":
+        app = _build_fusion_model_app(settings)
     elif service_name == "metaclip":
         model = MetaclipModel(
             settings.metaclip_cuda_visible_devices,
@@ -253,6 +297,11 @@ def _host_port_workers(service_name: str, settings: Settings) -> tuple[str, int,
             settings.metaclip_host,
             settings.metaclip_port,
             settings.metaclip_max_workers,
+        ),
+        "fusion_model": (
+            settings.fusion_model_host,
+            settings.fusion_model_port,
+            settings.fusion_model_max_workers,
         ),
     }[service_name]
 

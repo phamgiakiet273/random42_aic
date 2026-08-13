@@ -32,7 +32,34 @@ const ROUTES = {
         temporal: 'hub/siglip_beta_temporal_search',
         scroll: 'hub/siglip_beta_scroll'
     },
+    // Learned Cross-Lingual Expert Fusion: SigLIP2 + jina-clip-v2 + gating MLP.
+    // Text queries go to the fusion service; image/temporal/scroll are not
+    // implemented there, so fall back to siglip_alpha for those query types.
+    FUSION_MODEL: {
+        text: 'hub/fusion_model_text_search',
+        image: 'hub/siglip_alpha_image_search',
+        temporal: 'hub/siglip_alpha_temporal_search',
+        scroll: 'hub/siglip_alpha_scroll'
+    },
+    // jina-clip-v2 alone (Expert B) — text search only; image/temporal/scroll
+    // fall back to siglip_alpha just like FUSION_MODEL.
+    JINA: {
+        text: 'hub/jina_text_search',
+        image: 'hub/siglip_alpha_image_search',
+        temporal: 'hub/siglip_alpha_temporal_search',
+        scroll: 'hub/siglip_alpha_scroll'
+    },
 };
+
+// Our services return `payload.data` = results array directly; legacy wrapped
+// them one level deeper (`payload.data.data`). Handle both so the UI renders.
+function extractResults(payload) {
+    const d = payload && payload.data;
+    if (Array.isArray(d)) return d;
+    if (d && Array.isArray(d.data)) return d.data;
+    if (d && Array.isArray(d.rows)) return d.rows;
+    return d;
+}
 
 
 let temporalEvents = [];
@@ -349,7 +376,7 @@ export function initSearchHandler() {
                     returnObject,
                     frameClassValues
                 },
-                results: payload.data.data // Store actual results
+                results: extractResults(payload) // Store actual results
             };
 
             // Update history with full context
@@ -514,7 +541,7 @@ export async function performScrollSearch(record, utilityFeature = 'shot') {
                 returnObject,
                 frameClassValues
             },
-            results: payload.data.data
+            results: extractResults(payload)
         };
 
         // Find the index of the original frame in the results

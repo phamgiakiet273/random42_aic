@@ -21,7 +21,7 @@ from src.common.schemas.api import APIResponse
 from src.common.schemas.rerank import VideoMetadata
 from src.services.hub_service import HubGatewayService
 
-_CLIP_VARIANTS = ("siglip_alpha", "siglip_beta", "metaclip")
+_CLIP_VARIANTS = ("siglip_alpha", "siglip_beta", "metaclip", "fusion_model", "jina")
 
 
 def _register_clip_variant_routes(

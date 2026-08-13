@@ -48,9 +48,14 @@ class Qwen25VL:
                 if content_item["type"] == "video"
             ]
 
-            inputs = self.processor(
-                text=[text_prompt], videos=videos, padding=True, return_tensors="pt"
-            ).to(self.device)
+            if not videos:
+                inputs = self.processor(
+                    text=[text_prompt], padding=True, return_tensors="pt"
+                ).to(self.device)
+            else:
+                inputs = self.processor(
+                    text=[text_prompt], videos=videos, padding=True, return_tensors="pt"
+                ).to(self.device)
 
             with torch.no_grad():
                 generated_ids = self.model.generate(

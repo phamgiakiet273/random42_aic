@@ -59,7 +59,7 @@ logger = get_logger()
 class HubGatewayService:
     """Gateway/orchestration layer sitting in front of the other 6 services."""
 
-    _CLIP_VARIANTS = ("siglip_alpha", "siglip_beta", "metaclip")
+    _CLIP_VARIANTS = ("siglip_alpha", "siglip_beta", "metaclip", "fusion_model", "jina")
 
     def __init__(self, request_timeout: int | None = None) -> None:
         self._settings = get_settings()
@@ -83,19 +83,35 @@ class HubGatewayService:
         kept for symmetry with the other send_* helpers below."""
         return file_path
 
+    @staticmethod
+    def _frame_path_to_nginx(full_path: str) -> str | None:
+        """Translate an AIC-style frame path to the flat nginx layout on this server.
+
+        Input : 0/frames/autoshot/Keyframes_L21/keyframes/L21_V001/00000.avif
+        Output: 0/frames/autoshot/L21_V001/00001.jpg
+        (Qdrant frame ids are 0-based; on-disk files are 1-based .jpg, flat under
+        data/0/frames/autoshot/<video>/<file>.jpg — a symlink to the real keyframes.)
+        """
+        import re
+        m = re.search(r"(L\d+_V\d+)/(\d+)\.\w+$", full_path)
+        if not m:
+            return None
+        video, frame = m.group(1), m.group(2)
+        prefix = full_path.split("frames/")[0] + "frames/autoshot/"
+        return f"{prefix}{video}/{int(frame) + 1:03d}.jpg"
+
     def build_image_redirect_target(self, full_path: str) -> str:
         """sample input: 0/frames/autoshot/Keyframes_L26/keyframes/L26_V264/06356.avif"""
         settings = self._settings
-        full_path = full_path.replace(settings.split_name, settings.split_name_low_res)
-        target = f"{settings.nginx_image_host}/{full_path}"
+        translated = self._frame_path_to_nginx(full_path) or full_path
+        target = f"{settings.nginx_image_host}/{translated}"
         logger.info(f"send_img redirect target: {target}")
         return target
 
     def build_image_original_redirect_target(self, full_path: str) -> str:
         settings = self._settings
-        full_path = full_path.replace(settings.split_name_low_res, settings.split_name)
-        full_path = full_path.replace(".avif", ".jpg")
-        target = f"{settings.nginx_image_host}/{full_path}"
+        translated = self._frame_path_to_nginx(full_path) or full_path
+        target = f"{settings.nginx_image_host}/{translated}"
         logger.info(f"send_img_original redirect target: {target}")
         return target
 
@@ -304,12 +320,28 @@ class HubGatewayService:
             "siglip_alpha": settings.siglip_v2_host_public,
             "siglip_beta": settings.siglip_v2_b_host_public,
             "metaclip": settings.metaclip_host_public,
+            "fusion_model": settings.fusion_model_host_public,
+            "jina": settings.fusion_model_host_public,
         }
         if variant not in hosts:
             raise ValueError(
                 f"Unknown CLIP variant {variant!r}, expected one of {self._CLIP_VARIANTS}"
             )
         return hosts[variant]
+
+    def _clip_url(self, variant: str, endpoint: str) -> str:
+        """Backend URL for one CLIP-variant endpoint.
+
+        The fusion_model process serves BOTH the fused search and jina alone
+        under the `/fusion_model` prefix, so the `jina` variant maps to
+        `/fusion_model/jina_text_search` instead of `/jina/text_search`.
+        """
+        host = self._clip_host(variant)
+        if variant == "jina":
+            if endpoint == "text_search":
+                endpoint = "jina_text_search"
+            return f"{host}/fusion_model/{endpoint}"
+        return f"{host}/{variant}/{endpoint}"
 
     async def clip_text_search(
         self,
@@ -324,7 +356,7 @@ class HubGatewayService:
         skip_frames: list[dict] | None = None,
         sort_to_news: bool = True,
     ) -> APIResponse:
-        url = f"{self._clip_host(variant)}/{variant}/text_search"
+        url = self._clip_url(variant, "text_search")
         payload = {
             "text": text,
             "k": k,
@@ -357,7 +389,7 @@ class HubGatewayService:
         sort_to_news: bool = True,
     ) -> APIResponse:
         """`image_data` is base64-encoded image bytes."""
-        url = f"{self._clip_host(variant)}/{variant}/image_search"
+        url = self._clip_url(variant, "image_search")
         payload = {
             "image_data": image_data,
             "k": k,
@@ -442,7 +474,7 @@ class HubGatewayService:
         sort_to_news: bool = True,
         main_event_index: int = 0,
     ) -> APIResponse:
-        url = f"{self._clip_host(variant)}/{variant}/temporal_search"
+        url = self._clip_url(variant, "temporal_search")
         payload = {
             "text": text,
             "k": k,
@@ -477,7 +509,7 @@ class HubGatewayService:
         sort_to_news: bool = True,
         utility_feature: str = "shot",
     ) -> APIResponse:
-        url = f"{self._clip_host(variant)}/{variant}/scroll"
+        url = self._clip_url(variant, "scroll")
         payload = {
             "k": k,
             "video_filter": video_filter,
