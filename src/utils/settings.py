@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     cuda_device_order: str = Field("PCI_BUS_ID", alias="CUDA_DEVICE_ORDER")
     request_timeout: int = Field(30, alias="REQUEST_TIMEOUT")
     timeout_keep_alive: int = Field(30, alias="TIMEOUT_KEEP_ALIVE")
+    qdrant_upsert_batch_size: int = Field(
+        1_000, alias="QDRANT_UPSERT_BATCH_SIZE"
+    )
     huggingface_hub_token: str | None = Field(None, alias="HUGGINGFACE_HUB_TOKEN")
 
     # --- Dataset / metadata paths ---

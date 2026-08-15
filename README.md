@@ -68,12 +68,19 @@ The two compose files split by workload, not by environment:
 
 ```bash
 # on the GPU server
+# Copy .env.example to .env first. Inside the server stack, keep the three
+# *_QDRANT_URL values pointed at their compose service names (the defaults do this).
 docker compose -f docker-compose-server.yml up --build -d
 
 # wherever you want the UI (can be the same machine or your laptop)
 # first point .env's *_HOST_PUBLIC / NGINX_*_HOST vars at the server above
 docker compose -f docker-compose-local.yml up --build
 ```
+
+For the temporary local-machine configuration, `.env` uses host bind mounts for
+the dataset, model cache, and logs. Replace those local paths with managed
+storage before a final or public deployment; the model cache and logs contain
+runtime state and must not be committed to the repository.
 
 Scale the server stack down by commenting out services you don't need (e.g. drop `metaclip` +
 `qdrant-metaclip` if you only run the two SIGLIP2 variants).
@@ -90,6 +97,10 @@ SERVICE=hub uvicorn src.main:app --host 0.0.0.0 --port 9021 --reload
 pip install -r requirements.txt
 SERVICE=siglip_alpha uvicorn src.main:app --port 9029
 ```
+
+When running the complete server stack, Qdrant starts empty. After the dataset and
+feature files are mounted under `./data`, call each enabled model service's
+`setup_database` endpoint to create and ingest its collection before attempting a search.
 
 Open `http://localhost:9021` for the search UI.
 

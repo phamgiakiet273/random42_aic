@@ -95,6 +95,9 @@ class ClipSearchService:
             f"Setting up database {collection_name}, expecting up to 60 minutes to finish"
         )
         start = time.time()
+        # Validate the warm-up vector before changing the collection.  A bad
+        # configured path must fail fast rather than after a full re-index.
+        dummy_query = np.load(dummy_vector_path).reshape(1, -1).astype("float32")[0]
         self.qdrant.add_database(
             collection_name=collection_name,
             feature_size=feature_size,
@@ -107,8 +110,6 @@ class ClipSearchService:
             unique_json_path=unique_json_path,
             create_collection=create_collection,
         )
-
-        dummy_query = np.load(dummy_vector_path).reshape(1, -1).astype("float32")[0]
 
         # --- Full warm-up: GPU model + Qdrant cache ---
         # 1. Warm GPU: first CUDA call initializes context + JIT compiles kernels (~1-2s)

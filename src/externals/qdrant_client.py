@@ -77,6 +77,7 @@ class QdrantSearchClient:
         create_collection: bool = True,
     ) -> bool:
         """Create (or reuse) `collection_name` and bulk-ingest feature vectors + metadata into it."""
+        settings = get_settings()
         self.collection_name = collection_name
 
         if create_collection:
@@ -136,7 +137,11 @@ class QdrantSearchClient:
         logger.info("Building payload...")
 
         struct_id = 0
-        batch_size = 100_000  # flush threshold, adjust based on available RAM
+        batch_size = settings.qdrant_upsert_batch_size
+        if batch_size < 1:
+            raise ValueError("QDRANT_UPSERT_BATCH_SIZE must be at least 1")
+        logger.info(f"Using Qdrant upsert batch size {batch_size}")
+        batch_number = 0
 
         for idx_folder, folder_path in enumerate(features_path):
             insert_points = []
@@ -199,9 +204,9 @@ class QdrantSearchClient:
                     )
 
                     if len(insert_points) >= batch_size:
-                        phase = (struct_id // batch_size) + 1
+                        batch_number += 1
                         logger.info(
-                            f"Upserting data batch {phase} (size={len(insert_points)})"
+                            f"Upserting data batch {batch_number} (size={len(insert_points)})"
                         )
                         self.client.upsert(
                             collection_name=self.collection_name,
@@ -213,7 +218,11 @@ class QdrantSearchClient:
                 struct_id += len(vectors)
 
             if insert_points:
-                logger.info(f"Upserting final batch for folder {idx_folder + 1}")
+                batch_number += 1
+                logger.info(
+                    f"Upserting final batch {batch_number} for folder {idx_folder + 1} "
+                    f"(size={len(insert_points)})"
+                )
                 self.client.upsert(
                     collection_name=self.collection_name,
                     wait=False,

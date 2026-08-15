@@ -1,7 +1,8 @@
 # Server image for every service EXCEPT `hub` (siglip_alpha/beta, metaclip, rerank, util,
-# submission, result_manager) -- the GPU/vector-DB-facing backend. Pinned deps baked in,
-# no bind mounts, no --reload. `hub` runs separately via Dockerfile.local (see docker-compose-local.yml).
-FROM nvidia/cuda:12.8.0-runtime-ubuntu22.04 AS base
+# submission, result_manager) -- the GPU/vector-DB-facing backend.  Python's official
+# image guarantees the project's required Python 3.11; NVIDIA Container Toolkit exposes
+# the host GPU to this container at runtime.
+FROM python:3.11-slim AS base
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -9,9 +10,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONPATH=/app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        python3.11 python3-pip ffmpeg \
-    && rm -rf /var/lib/apt/lists/* \
-    && ln -s /usr/bin/python3.11 /usr/bin/python
+        build-essential \
+        cmake \
+        ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -24,5 +26,7 @@ RUN useradd --create-home --shell /bin/bash appuser \
     && chown -R appuser:appuser /app
 USER appuser
 
-# SERVICE picks which of the 8 apps to serve (see src/main.py); host/port/workers come from .env via Settings.
-CMD ["python", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0"]
+# SERVICE picks which of the 8 apps to serve (see src/main.py); host/port/workers come
+# from .env via Settings.  Do not invoke uvicorn with `src.main:app` here: that bypasses
+# src.main's configured per-service port and makes every container listen on 8000.
+CMD ["python", "-m", "src.main"]
