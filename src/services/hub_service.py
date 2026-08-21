@@ -91,6 +91,7 @@ class HubGatewayService:
         Output: 0/frames/autoshot/L21_V001/001.jpg
         """
         import re
+
         m = re.search(r"(L\d+_V\d+)/(\d+)\.\w+$", full_path)
         if not m:
             return None

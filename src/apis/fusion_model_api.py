@@ -15,7 +15,9 @@ from src.common.schemas.vector import RetrievalRequest
 from src.services.fusion_model_service import FusionModelSearchService
 
 
-def build_router(service: FusionModelSearchService, prefix: str = "/fusion_model") -> APIRouter:
+def build_router(
+    service: FusionModelSearchService, prefix: str = "/fusion_model"
+) -> APIRouter:
     router = APIRouter(prefix=prefix, tags=[prefix.lstrip("/")])
 
     @router.get("/ping")

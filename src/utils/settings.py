@@ -148,23 +148,15 @@ class Settings(BaseSettings):
     fusion_model_qdrant_grpc_port: int = Field(
         6334, alias="FUSION_MODEL_QDRANT_GRPC_PORT"
     )
-    fusion_model_database_a: str = Field(
-        "SIGLIP_V2", alias="FUSION_MODEL_DATABASE_A"
-    )
-    fusion_model_database_b: str = Field(
-        "EXPERT_B_V1", alias="FUSION_MODEL_DATABASE_B"
-    )
+    fusion_model_database_a: str = Field("SIGLIP_V2", alias="FUSION_MODEL_DATABASE_A")
+    fusion_model_database_b: str = Field("EXPERT_B_V1", alias="FUSION_MODEL_DATABASE_B")
     fusion_model_gating_ckpt: str = Field(
         "data/weights/gating_mlp_v3.pt", alias="FUSION_MODEL_GATING_CKPT"
     )
     # "context" = transparent overlap-aware rule (default, see context_rule_wb);
     # "mlp" = learned gating MLP (kept for experiments — v3 is collapsed).
-    fusion_model_gating_mode: str = Field(
-        "context", alias="FUSION_MODEL_GATING_MODE"
-    )
-    fusion_model_rrf_blend: float = Field(
-        0.0, alias="FUSION_MODEL_RRF_BLEND"
-    )
+    fusion_model_gating_mode: str = Field("context", alias="FUSION_MODEL_GATING_MODE")
+    fusion_model_rrf_blend: float = Field(0.0, alias="FUSION_MODEL_RRF_BLEND")
     fusion_model_top_k: int = Field(100, alias="FUSION_MODEL_TOP_K")
 
     # --- Rerank (dominant-color re-sort) ---

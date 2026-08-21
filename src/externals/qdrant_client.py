@@ -273,6 +273,7 @@ class QdrantSearchClient:
         return_object: bool = True,
     ):
         from src.utils.metadata import get_sequential_id
+
         if time_in is not None:
             time_in = get_sequential_id(video_filter, str(time_in))
         if time_out is not None:

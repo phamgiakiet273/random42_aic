@@ -21,7 +21,9 @@ def convert_time_to_frame(video_name: str, input_time: str) -> str:
         fps = ujson.load(infile)[video_name.replace(".mp4", "")]
     return str(int(float(fps) * (60 * int(minutes) + int(seconds))))
 
+
 _map_keyframes_cache = {}
+
 
 def _load_keyframes_mapping(video_name: str):
     video_base = video_name.replace(".mp4", "")
@@ -32,11 +34,12 @@ def _load_keyframes_mapping(video_name: str):
         if os.path.exists(csv_path):
             try:
                 import csv
+
                 with open(csv_path, "r", encoding="utf-8") as f:
                     reader = csv.DictReader(f)
                     for row in reader:
-                        seq_val = str(row['n']).zfill(5)
-                        true_val = str(row['frame_idx']).zfill(5)
+                        seq_val = str(row["n"]).zfill(5)
+                        true_val = str(row["frame_idx"]).zfill(5)
                         seq_to_true[seq_val] = true_val
                         true_to_seq[true_val] = seq_val
             except Exception:
@@ -44,10 +47,12 @@ def _load_keyframes_mapping(video_name: str):
         _map_keyframes_cache[video_base] = (seq_to_true, true_to_seq)
     return _map_keyframes_cache[video_base]
 
+
 def get_true_frame_id(video_name: str, sequential_id: str) -> str:
     """Map sequential keyframe ID (e.g., '00004') to true frame number (e.g., '00290')."""
     seq_to_true, _ = _load_keyframes_mapping(video_name)
     return seq_to_true.get(str(sequential_id).zfill(5), str(sequential_id))
+
 
 def get_sequential_id(video_name: str, true_id: str) -> str:
     """Map true frame number (e.g., '00290') to sequential keyframe ID (e.g., '00004')."""

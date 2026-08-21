@@ -86,7 +86,9 @@ class FusionModelSearchService:
 
     # ---- fusion internals ----
 
-    def _gating_weights(self, text: str, r_a: list[dict], r_b: list[dict]) -> tuple[float, float]:
+    def _gating_weights(
+        self, text: str, r_a: list[dict], r_b: list[dict]
+    ) -> tuple[float, float]:
         """Per-query (w_A, w_B).
 
         gating_mode="context" -> transparent overlap-aware rule (no MLP).
@@ -100,7 +102,9 @@ class FusionModelSearchService:
             return 1.0, 0.0
         feat = extract_query_features(text)
         # make_conf_features already returns (1, n_conf) for a single query.
-        conf = make_conf_features(conf_from_results(r_a, r_b)[np.newaxis, :], self.scale)
+        conf = make_conf_features(
+            conf_from_results(r_a, r_b)[np.newaxis, :], self.scale
+        )
         with torch.no_grad():
             w = self.gating(
                 torch.from_numpy(feat).unsqueeze(0),
@@ -123,10 +127,12 @@ class FusionModelSearchService:
         feat_a = np.asarray(feat_a).reshape(-1)
         feat_b = np.asarray(feat_b).reshape(-1)
         r_a, r_b = await asyncio.gather(
-            asyncio.to_thread(self.qdrant_a.search, query=feat_a, k=k,
-                              sort_to_news=False),
-            asyncio.to_thread(self.qdrant_b.search, query=feat_b, k=k,
-                              sort_to_news=False),
+            asyncio.to_thread(
+                self.qdrant_a.search, query=feat_a, k=k, sort_to_news=False
+            ),
+            asyncio.to_thread(
+                self.qdrant_b.search, query=feat_b, k=k, sort_to_news=False
+            ),
         )
         w_a, w_b = self._gating_weights(text, r_a, r_b)
         conf_raw = conf_from_results(r_a, r_b)
@@ -182,8 +188,10 @@ class FusionModelSearchService:
         # Siglip2Model returns (1, 1536); Qdrant wants a flat 1-D vector.
         feat_a = np.asarray(feat_a).reshape(-1)
         feat_b = np.asarray(feat_b).reshape(-1)
-        logger.debug(f"[FUSION] encode done in {(time.time()-t0)*1000:.0f}ms "
-                     f"(A={feat_a.shape} B={feat_b.shape})")
+        logger.debug(
+            f"[FUSION] encode done in {(time.time() - t0) * 1000:.0f}ms "
+            f"(A={feat_a.shape} B={feat_b.shape})"
+        )
 
         # 2. search both collections in parallel
         t1 = time.time()
@@ -213,8 +221,10 @@ class FusionModelSearchService:
                 return_object=return_object,
             ),
         )
-        logger.debug(f"[FUSION] search done in {(time.time()-t1)*1000:.0f}ms "
-                     f"(A={len(r_a)} B={len(r_b)})")
+        logger.debug(
+            f"[FUSION] search done in {(time.time() - t1) * 1000:.0f}ms "
+            f"(A={len(r_a)} B={len(r_b)})"
+        )
 
         # 3. gating fusion with fallback to SigLIP2-alone on jina failure
         try:
@@ -224,7 +234,9 @@ class FusionModelSearchService:
                 result = r_a
             logger.info(f"[FUSION] wA={w_a:.2f} wB={w_b:.2f} fused={len(result)}")
         except Exception as exc:  # noqa: BLE001 — degrade gracefully to Expert A
-            logger.exception(f"[FUSION] gating failed, falling back to SigLIP2 alone: {exc}")
+            logger.exception(
+                f"[FUSION] gating failed, falling back to SigLIP2 alone: {exc}"
+            )
             result = r_a
 
         if sort_to_news:
@@ -270,7 +282,7 @@ class FusionModelSearchService:
             return_object=return_object,
         )
         logger.info(
-            f"[JINA-ALONE] search done in {(time.time()-t0)*1000:.0f}ms "
+            f"[JINA-ALONE] search done in {(time.time() - t0) * 1000:.0f}ms "
             f"results={len(r_b)}"
         )
         if sort_to_news:

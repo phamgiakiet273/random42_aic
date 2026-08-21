@@ -155,22 +155,34 @@ def build_router(service: HubGatewayService) -> APIRouter:
         target_url = service.build_image_redirect_target(full_path)
         import httpx
         from fastapi import Response, HTTPException
+
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.get(target_url)
             if resp.status_code != 200:
-                raise HTTPException(status_code=resp.status_code, detail="Image not found")
-            return Response(content=resp.content, media_type=resp.headers.get("content-type", "image/jpeg"))
+                raise HTTPException(
+                    status_code=resp.status_code, detail="Image not found"
+                )
+            return Response(
+                content=resp.content,
+                media_type=resp.headers.get("content-type", "image/jpeg"),
+            )
 
     @router.get("/send_img_original/{full_path:path}")
     async def send_img_original(full_path: str):
         target_url = service.build_image_original_redirect_target(full_path)
         import httpx
         from fastapi import Response, HTTPException
+
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.get(target_url)
             if resp.status_code != 200:
-                raise HTTPException(status_code=resp.status_code, detail="Image not found")
-            return Response(content=resp.content, media_type=resp.headers.get("content-type", "image/jpeg"))
+                raise HTTPException(
+                    status_code=resp.status_code, detail="Image not found"
+                )
+            return Response(
+                content=resp.content,
+                media_type=resp.headers.get("content-type", "image/jpeg"),
+            )
 
     @router.get("/send_video/{full_path:path}")
     async def send_video(full_path: str):
