@@ -87,10 +87,8 @@ class HubGatewayService:
     def _frame_path_to_nginx(full_path: str) -> str | None:
         """Translate an AIC-style frame path to the flat nginx layout on this server.
 
-        Input : 0/frames/autoshot/Keyframes_L21/keyframes/L21_V001/00000.avif
-        Output: 0/frames/autoshot/L21_V001/00001.jpg
-        (Qdrant frame ids are 0-based; on-disk files are 1-based .jpg, flat under
-        data/0/frames/autoshot/<video>/<file>.jpg — a symlink to the real keyframes.)
+        Input : 0/frames/autoshot/Keyframes_L21/keyframes/L21_V001/00001.avif
+        Output: 0/frames/autoshot/L21_V001/001.jpg
         """
         import re
         m = re.search(r"(L\d+_V\d+)/(\d+)\.\w+$", full_path)
@@ -98,7 +96,7 @@ class HubGatewayService:
             return None
         video, frame = m.group(1), m.group(2)
         prefix = full_path.split("frames/")[0] + "frames/autoshot/"
-        return f"{prefix}{video}/{int(frame) + 1:03d}.jpg"
+        return f"{prefix}{video}/{int(frame):03d}.jpg"
 
     def build_image_redirect_target(self, full_path: str) -> str:
         """sample input: 0/frames/autoshot/Keyframes_L26/keyframes/L26_V264/06356.avif"""

@@ -74,6 +74,9 @@ class UtilService:
     ) -> APIResponse:
         """Thin wrapper over `video_batch.get_neighboring_frames`, returning paths
         relative to `base_path` (as the legacy handler did) instead of absolute ones."""
+        from src.utils.metadata import get_sequential_id
+        frame_num = get_sequential_id(video_name, str(frame_num))
+        
         prev_frames, next_frames = _get_neighboring_frames(
             frame_num=frame_num, video_name=video_name, k=k
         )
@@ -111,6 +114,9 @@ class UtilService:
             raise RuntimeError(
                 "UtilService.get_vector requires a QdrantSearchClient to be configured"
             )
+
+        from src.utils.metadata import get_sequential_id
+        frame_name = get_sequential_id(video_name, str(frame_name))
 
         anchor_matches = self.vector_client.scroll_video(
             k=1,

@@ -204,9 +204,7 @@ function createThumbnailElement(rec) {
             <a class="image_id text-overlay-bottom"
                style="left: 0; bottom: 1.5rem;"
                id="frame_name-${rec.index}"
-               target="${rec.index}">
-               ${rec.keyframe_id}
-            </a>
+               target="${rec.index}">${rec.keyframe_id}</a>
         </div>
         <div style="align-items: center; display: flex; justify-content: center;">
             <div style="position: absolute; bottom: 0; width: 40px; height: 1.5rem; z-index: 100; justify-self: center;"

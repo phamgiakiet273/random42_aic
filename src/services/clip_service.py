@@ -311,6 +311,13 @@ class ClipSearchService:
             record["frame_path"] = os.path.relpath(
                 frame_path, settings.dataset_path_team
             )
+            # Overwrite sequential ids with true frame ids for the UI
+            from src.utils.metadata import get_true_frame_id
+            record["keyframe_id"] = get_true_frame_id(record["video_name"], record["keyframe_id"])
+            if "related_start_frame" in record:
+                record["related_start_frame"] = get_true_frame_id(record["video_name"], record["related_start_frame"])
+            if "related_end_frame" in record:
+                record["related_end_frame"] = get_true_frame_id(record["video_name"], record["related_end_frame"])
         return records
 
     def _add_paths_nested(self, chains: list[list[dict]]) -> list[list[dict]]:

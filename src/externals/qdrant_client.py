@@ -272,6 +272,12 @@ class QdrantSearchClient:
         return_s2t: bool = True,
         return_object: bool = True,
     ):
+        from src.utils.metadata import get_sequential_id
+        if time_in is not None:
+            time_in = get_sequential_id(video_filter, str(time_in))
+        if time_out is not None:
+            time_out = get_sequential_id(video_filter, str(time_out))
+
         """Fetch points by id range (`feature="shot"`) or by precomputed dup/unique id lists."""
         if feature == "shot":
             id_list = sorted(self._get_frames(video_filter, time_in, time_out))
@@ -563,7 +569,7 @@ class QdrantSearchClient:
                 "key": key,
                 "idx_folder": str(payload["idx_folder"]),
                 "video_name": str(payload["video_name"]),
-                "keyframe_id": str(payload["frame_name"]).zfill(5),
+                "keyframe_id": str(int(payload["frame_name"]) + 1).zfill(5),
                 "fps": str(payload["fps"]),
                 "score": score,
                 "frame_class": str(payload["frame_class"]),
