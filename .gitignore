@@ -1,10 +1,10 @@
-*.json
 .env
 *.mp4
 *.pt
 *.ckpt
 data/
 .ruff_cache/
+.claude/settings.local.json
 .DS_Store
 mlruns/
 mlartifacts/
