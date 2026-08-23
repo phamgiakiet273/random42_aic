@@ -117,5 +117,6 @@ services:
     image: nginx:alpine
     ports: ["9027:80"]
     volumes:
-      - ./data:/usr/share/nginx/html:ro
+      - ${HOST_DATA_PATH:-./data}:/usr/share/nginx/html:ro
+      - ./media_server.conf:/etc/nginx/conf.d/default.conf:ro
     restart: unless-stopped

@@ -12,10 +12,6 @@ export default function VideoGrid() {
   const resultsPerPage = useSettingsStore((s) => s.resultsPerPage)
   const thumbnailSize = useSettingsStore((s) => s.thumbnailSize)
 
-  // Reset to page 1 whenever the page size changes, so a stale page index
-  // never goes out of range. Adjusting state during render (React's
-  // recommended pattern for this) instead of an effect avoids an extra
-  // commit/re-render pass.
   const [prevResultsPerPage, setPrevResultsPerPage] = useState(resultsPerPage)
   if (resultsPerPage !== prevResultsPerPage) {
     setPrevResultsPerPage(resultsPerPage)

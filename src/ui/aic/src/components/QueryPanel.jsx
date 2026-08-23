@@ -5,6 +5,7 @@ const MODELS = [
   { value: 'TEMPORAL_SIGLIP_ALPHA', label: 'Temporal Alpha' },
   { value: 'SIGLIP_BETA', label: 'SIGLIP Beta' },
   { value: 'TEMPORAL_SIGLIP_BETA', label: 'Temporal Beta' },
+  { value: 'FUSION', label: 'Fusion' },
 ]
 
 export default function QueryPanel() {
