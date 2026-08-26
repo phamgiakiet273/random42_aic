@@ -9,7 +9,10 @@ export default function App() {
         <div className="flex-1">
           <span className="text-lg font-semibold">Random42</span>
         </div>
-        <Link to="/result-manager" className="btn btn-ghost btn-sm">
+        <Link to="/" className="btn btn-link btn-sm">
+          Search Page
+        </Link>
+        <Link to="/result-manager" className="btn btn-link btn-sm">
           Result Manager
         </Link>
       </header>

@@ -2,10 +2,13 @@ import { useState, useRef } from 'react'
 import Papa from 'papaparse'
 import { Link } from 'react-router-dom'
 import { toResultCsv, downloadCsvFile } from '../utils/csv'
+import ResultCard from '../components/ResultCard'
 
 export default function ResultManagerPage() {
   const [rows, setRows] = useState([])
   const [selected, setSelected] = useState(new Set())
+  const [draggingIndex, setDraggingIndex] = useState(null)
+  const [overIndex, setOverIndex] = useState(null)
   const dragIndex = useRef(null)
 
   const handleFileUpload = (e) => {
@@ -42,6 +45,11 @@ export default function ResultManagerPage() {
 
   const handleDragStart = (index) => {
     dragIndex.current = index
+    setDraggingIndex(index)
+  }
+
+  const handleDragOver = (index) => {
+    if (index !== dragIndex.current) setOverIndex(index)
   }
 
   const handleDrop = (index) => {
@@ -52,6 +60,14 @@ export default function ResultManagerPage() {
       return next
     })
     dragIndex.current = null
+    setDraggingIndex(null)
+    setOverIndex(null)
+  }
+
+  const handleDragEnd = () => {
+    dragIndex.current = null
+    setDraggingIndex(null)
+    setOverIndex(null)
   }
 
   const handleDownload = () => {
@@ -59,7 +75,7 @@ export default function ResultManagerPage() {
   }
 
   return (
-    <main className="p-4 flex flex-col gap-4 max-w-3xl mx-auto">
+    <main className="p-4 flex flex-col gap-4">
       <Link to="/" className="link link-hover text-sm">
         ← Back
       </Link>
@@ -93,28 +109,23 @@ export default function ResultManagerPage() {
       {rows.length === 0 ? (
         <p className="text-sm text-base-content/60">Upload a CSV to get started.</p>
       ) : (
-        <ul className="flex flex-col gap-1">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
           {rows.map((row, index) => (
-            <li
+            <ResultCard
               key={row.id}
-              draggable
-              onDragStart={() => handleDragStart(index)}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={() => handleDrop(index)}
-              className="flex items-center gap-3 bg-base-100 rounded p-2 shadow-sm cursor-move"
-            >
-              <span className="text-xs text-base-content/50 w-8 text-right">{index + 1}</span>
-              <input
-                type="checkbox"
-                className="checkbox checkbox-sm"
-                checked={selected.has(row.id)}
-                onChange={() => toggleSelected(row.id)}
-              />
-              <span className="font-mono text-sm">{row.video_id}</span>
-              <span className="font-mono text-sm text-base-content/60">{row.keyframe_id}</span>
-            </li>
+              row={row}
+              index={index}
+              selected={selected.has(row.id)}
+              onToggleSelected={toggleSelected}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+              onDragEnd={handleDragEnd}
+              isDragging={draggingIndex === index}
+              isDragOver={overIndex === index}
+            />
           ))}
-        </ul>
+        </div>
       )}
     </main>
   )
