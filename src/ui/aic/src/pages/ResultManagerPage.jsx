@@ -13,6 +13,8 @@ export default function ResultManagerPage() {
   const [draggingIndex, setDraggingIndex] = useState(null)
   const [overIndex, setOverIndex] = useState(null)
   const [previewIndex, setPreviewIndex] = useState(null)
+  const [rangeFrom, setRangeFrom] = useState('')
+  const [rangeTo, setRangeTo] = useState('')
   const dragIndex = useRef(null)
 
   const handleFileUpload = (e) => {
@@ -45,6 +47,25 @@ export default function ResultManagerPage() {
   const handleDeleteSelected = () => {
     setRows((prev) => prev.filter((r) => !selected.has(r.id)))
     setSelected(new Set())
+  }
+
+  const handleSelectAll = () => {
+    setSelected(new Set(rows.map((r) => r.id)))
+  }
+
+  const handleClearSelection = () => setSelected(new Set())
+
+  const handleSelectRange = () => {
+    const from = parseInt(rangeFrom, 10)
+    const to = parseInt(rangeTo, 10)
+    if (Number.isNaN(from) || Number.isNaN(to)) return
+    const lo = Math.max(1, Math.min(from, to))
+    const hi = Math.min(rows.length, Math.max(from, to))
+    setSelected((prev) => {
+      const next = new Set(prev)
+      rows.slice(lo - 1, hi).forEach((r) => next.add(r.id))
+      return next
+    })
   }
 
   const handleDragStart = (index) => {
@@ -106,20 +127,57 @@ export default function ResultManagerPage() {
         />
         <button
           type="button"
-          className="btn btn-sm btn-error"
-          disabled={selected.size === 0}
-          onClick={handleDeleteSelected}
-        >
-          Delete Selected
-        </button>
-        <button
-          type="button"
           className="btn btn-sm btn-primary ml-auto"
           disabled={rows.length === 0}
           onClick={handleDownload}
         >
           Download Result
         </button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-base-content/60 w-24">{selected.size} selected</span>
+        <button type="button" className="btn btn-xs" disabled={rows.length === 0} onClick={handleSelectAll}>
+          Select All
+        </button>
+        <button
+          type="button"
+          className="btn btn-xs"
+          disabled={selected.size === 0}
+          onClick={handleClearSelection}
+        >
+          Clear
+        </button>
+        <button
+          type="button"
+          className="btn btn-xs btn-error"
+          disabled={selected.size === 0}
+          onClick={handleDeleteSelected}
+        >
+          Delete Selected
+        </button>
+        <div className="flex items-center gap-1">
+          <input
+            type="number"
+            min={1}
+            placeholder="From"
+            value={rangeFrom}
+            onChange={(e) => setRangeFrom(e.target.value)}
+            className="input input-xs w-16"
+          />
+          <span className="text-xs text-base-content/60">-</span>
+          <input
+            type="number"
+            min={1}
+            placeholder="To"
+            value={rangeTo}
+            onChange={(e) => setRangeTo(e.target.value)}
+            className="input input-xs w-16"
+          />
+          <button type="button" className="btn btn-xs" onClick={handleSelectRange}>
+            Select Range
+          </button>
+        </div>
       </div>
 
       {rows.length === 0 ? (

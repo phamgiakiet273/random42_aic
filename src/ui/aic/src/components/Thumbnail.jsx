@@ -1,16 +1,29 @@
 import { X } from 'lucide-react'
-import { useExcludedFramesStore } from '../stores/excludedFramesStore'
+import { useExcludedFramesStore, frameKey } from '../stores/excludedFramesStore'
+import { useSelectionStore } from '../stores/selectionStore'
 import { cleanFrameName } from '../utils/frameName'
 
-export default function Thumbnail({ video, onClick }) {
+export default function Thumbnail({ video, index, onClick }) {
   const exclude = useExcludedFramesStore((s) => s.exclude)
+  const selected = useSelectionStore((s) => s.selected.has(frameKey(video)))
+  const toggleSelected = useSelectionStore((s) => s.toggle)
 
   return (
     <div
       className="card bg-base-100 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
       onClick={onClick}
     >
-      <figure>
+      <figure className="relative">
+        <input
+          type="checkbox"
+          className="checkbox checkbox-sm absolute top-2 left-2 z-10 bg-base-100"
+          checked={selected}
+          onClick={(e) => e.stopPropagation()}
+          onChange={() => toggleSelected(frameKey(video))}
+        />
+        {index != null && (
+          <span className="badge badge-neutral absolute top-2 right-2 z-10">{index}</span>
+        )}
         <img
           src={video.thumbnail_url}
           alt={video.title}

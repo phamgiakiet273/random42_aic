@@ -7,6 +7,7 @@ import Thumbnail from './Thumbnail'
 import FrameDetailModal from './FrameDetailModal'
 import Pagination from './Pagination'
 import DownloadResultsButton from './DownloadResultsButton'
+import BulkActions from './BulkActions'
 
 export default function VideoGrid() {
   const [selected, setSelected] = useState(null)
@@ -56,15 +57,21 @@ export default function VideoGrid() {
           onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
         />
       </div>
+      <BulkActions records={visibleData} />
       <div
         className="grid gap-4"
         style={{ gridTemplateColumns: `repeat(auto-fill, minmax(min(${thumbnailSize}px, 45vw), 1fr))` }}
       >
-        {pageItems.map((video) => (
-          <Thumbnail key={video.id} video={video} onClick={() => setSelected(video)} />
+        {pageItems.map((video, i) => (
+          <Thumbnail
+            key={video.id}
+            video={video}
+            index={(page - 1) * resultsPerPage + i + 1}
+            onClick={() => setSelected(video)}
+          />
         ))}
       </div>
-      
+
       <FrameDetailModal video={selected} onClose={() => setSelected(null)} />
     </div>
   )
