@@ -66,7 +66,6 @@ export default function FrameDetailModal({ video, onClose }) {
   const navigateBySeconds = (delta) => {
     const el = videoRef.current
     if (!el) return
-    el.pause()
     el.currentTime = Math.max(0, Math.min(el.duration || Infinity, el.currentTime + delta))
   }
 

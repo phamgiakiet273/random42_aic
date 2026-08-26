@@ -3,7 +3,7 @@ import { create } from 'zustand'
 const DEFAULTS = {
   returnS2t: false,
   returnObject: false,
-  frameClassFilter: [2, 3],
+  frameClassFilter: [0, 1],
   autoTranslate: false,
   immediateRerun: false,
   topK: 100,

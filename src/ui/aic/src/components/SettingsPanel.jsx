@@ -7,10 +7,9 @@ export default function SettingsPanel() {
   const settings = useSettingsStore()
 
   return (
-    <div className="card bg-base-100 shadow-sm">
-      <div className="card-body gap-4">
-        <h2 className="card-title text-base">Settings</h2>
-
+    <details className="collapse collapse-arrow bg-base-100 shadow-sm" open>
+      <summary className="collapse-title text-base font-semibold">Settings</summary>
+      <div className="collapse-content flex flex-col gap-4">
         <label className="label cursor-pointer justify-start gap-2">
         <input
           type="checkbox"
@@ -105,6 +104,6 @@ export default function SettingsPanel() {
           Reset Settings
         </button>
       </div>
-    </div>
+    </details>
   )
 }

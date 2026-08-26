@@ -12,8 +12,8 @@ export default function App() {
       <main className="flex flex-col lg:flex-row gap-4 p-4">
         <aside className="w-full lg:w-96 lg:shrink-0 flex flex-col gap-4 lg:h-[calc(100vh-6rem)] lg:overflow-y-auto">
           <QueryPanel />
-          <SettingsPanel />
           <FiltersPanel />
+          <SettingsPanel />
         </aside>
         <section className="flex-1 min-w-0">
           <VideoGrid />
