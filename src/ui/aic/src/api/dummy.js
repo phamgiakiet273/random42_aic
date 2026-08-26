@@ -13,9 +13,6 @@ const REAL_FRAMES = [
   '00411.avif', '04835.avif', '10319.avif',
 ]
 const REAL_VIDEO = { batch: 0, prefix: 'L21', video: 'L21_V001' }
-// Not confirmed against the real dataset -- matches the legacy UI's own
-// fallback (videoView.js: `parseFloat(record.fps) || 25`) until a real
-// `fps` value is available from the backend.
 const REAL_FPS = 25
 
 function realThumbnailUrl(index) {
@@ -84,4 +81,8 @@ export async function list() {
 export async function listVideoNames() {
   const uniqueNames = [...new Set(records.map((record) => record.video_id))]
   return { status: 200, message: 'Success', data: uniqueNames }
+}
+
+export async function submitTrake(videoId, frameIds) {
+  return { status: 200, message: 'Success', data: { submit_result: 'ok', video_id: videoId, frame_ids: frameIds } }
 }
