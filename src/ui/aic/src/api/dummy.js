@@ -19,6 +19,10 @@ function realThumbnailUrl(index) {
   return `${MEDIA_BASE_URL}/img/${REAL_VIDEO.batch}/frames/autoshot/Keyframes_${REAL_VIDEO.prefix}/keyframes/${REAL_VIDEO.video}/${frame}`
 }
 
+function realVideoUrl() {
+  return `${MEDIA_BASE_URL}/video/${REAL_VIDEO.batch}/videos/Videos_${REAL_VIDEO.prefix}/video/${REAL_VIDEO.video}.mp4`
+}
+
 const COLORS = ['#6366f1', '#ec4899', '#22c55e', '#f97316', '#06b6d4', '#a855f7', '#ef4444', '#0ea5e9']
 
 function formatTimestamp(totalSeconds) {
@@ -49,6 +53,7 @@ const records = Array.from({ length: RECORD_COUNT }, (_, i) => {
       title,
       timestamp,
       thumbnail_url: realThumbnailUrl(i),
+      video_path: realVideoUrl(),
     }
   }
 
