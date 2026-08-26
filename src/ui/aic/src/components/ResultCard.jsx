@@ -1,3 +1,5 @@
+import { COLORS, placeholderThumbnail } from '../utils/placeholder'
+
 export default function ResultCard({
   row,
   index,
@@ -9,7 +11,10 @@ export default function ResultCard({
   onDragEnd,
   isDragging,
   isDragOver,
+  onClick,
 }) {
+  const label = row.video_id || 'Unknown Video'
+
   return (
     <div
       draggable
@@ -20,7 +25,8 @@ export default function ResultCard({
       }}
       onDrop={() => onDrop(index)}
       onDragEnd={onDragEnd}
-      className={`card bg-base-100 shadow-sm transition-all duration-150 cursor-move relative ${
+      onClick={onClick}
+      className={`card bg-base-100 shadow-sm transition-all duration-150 cursor-pointer relative ${
         isDragging
           ? 'opacity-40 scale-95'
           : isDragOver
@@ -36,11 +42,15 @@ export default function ResultCard({
         onChange={() => onToggleSelected(row.id)}
       />
       <span className="badge badge-neutral absolute top-2 right-2 z-10">{index + 1}</span>
-      <figure className="aspect-video w-full bg-base-300 flex items-center justify-center text-xs text-base-content/40">
-        No preview
+      <figure>
+        <img
+          src={placeholderThumbnail(label, COLORS[index % COLORS.length])}
+          alt={label}
+          className="aspect-video w-full object-cover"
+        />
       </figure>
       <div className="card-body p-3 gap-0.5">
-        <p className="text-sm font-medium truncate">{row.video_id || 'Unknown Video'}</p>
+        <p className="text-sm font-medium truncate">{label}</p>
         <p className="text-xs text-base-content/60 truncate">{row.keyframe_id || '—'}</p>
       </div>
     </div>

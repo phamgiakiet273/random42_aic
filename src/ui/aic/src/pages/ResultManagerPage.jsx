@@ -2,13 +2,16 @@ import { useState, useRef } from 'react'
 import Papa from 'papaparse'
 import { Link } from 'react-router-dom'
 import { toResultCsv, downloadCsvFile } from '../utils/csv'
+import { COLORS, placeholderThumbnail } from '../utils/placeholder'
 import ResultCard from '../components/ResultCard'
+import FrameDetailModal from '../components/FrameDetailModal'
 
 export default function ResultManagerPage() {
   const [rows, setRows] = useState([])
   const [selected, setSelected] = useState(new Set())
   const [draggingIndex, setDraggingIndex] = useState(null)
   const [overIndex, setOverIndex] = useState(null)
+  const [previewIndex, setPreviewIndex] = useState(null)
   const dragIndex = useRef(null)
 
   const handleFileUpload = (e) => {
@@ -74,6 +77,19 @@ export default function ResultManagerPage() {
     downloadCsvFile('adjusted_result.csv', toResultCsv(rows))
   }
 
+  const previewRow = previewIndex != null ? rows[previewIndex] : null
+  const previewVideo = previewRow && {
+    id: previewRow.id,
+    video_id: previewRow.video_id || 'Unknown Video',
+    title: previewRow.video_id || 'Invalid Keyframe',
+    keyframe_id: previewRow.keyframe_id,
+    timestamp: '',
+    thumbnail_url: placeholderThumbnail(
+      previewRow.video_id || 'Unknown Video',
+      COLORS[previewIndex % COLORS.length],
+    ),
+  }
+
   return (
     <main className="p-4 flex flex-col gap-4">
       <Link to="/" className="link link-hover text-sm">
@@ -123,10 +139,13 @@ export default function ResultManagerPage() {
               onDragEnd={handleDragEnd}
               isDragging={draggingIndex === index}
               isDragOver={overIndex === index}
+              onClick={() => setPreviewIndex(index)}
             />
           ))}
         </div>
       )}
+
+      <FrameDetailModal video={previewVideo} onClose={() => setPreviewIndex(null)} />
     </main>
   )
 }
