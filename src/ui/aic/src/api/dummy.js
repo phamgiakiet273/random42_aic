@@ -13,6 +13,10 @@ const REAL_FRAMES = [
   '00411.avif', '04835.avif', '10319.avif',
 ]
 const REAL_VIDEO = { batch: 0, prefix: 'L21', video: 'L21_V001' }
+// Not confirmed against the real dataset -- matches the legacy UI's own
+// fallback (videoView.js: `parseFloat(record.fps) || 25`) until a real
+// `fps` value is available from the backend.
+const REAL_FPS = 25
 
 function realThumbnailUrl(index) {
   const frame = REAL_FRAMES[index % REAL_FRAMES.length]
@@ -21,6 +25,11 @@ function realThumbnailUrl(index) {
 
 function realVideoUrl() {
   return `${MEDIA_BASE_URL}/video/${REAL_VIDEO.batch}/videos/Videos_${REAL_VIDEO.prefix}/video/${REAL_VIDEO.video}.mp4`
+}
+
+function realKeyframeId(index) {
+  const frame = REAL_FRAMES[index % REAL_FRAMES.length]
+  return parseInt(frame, 10)
 }
 
 const COLORS = ['#6366f1', '#ec4899', '#22c55e', '#f97316', '#06b6d4', '#a855f7', '#ef4444', '#0ea5e9']
@@ -54,6 +63,8 @@ const records = Array.from({ length: RECORD_COUNT }, (_, i) => {
       timestamp,
       thumbnail_url: realThumbnailUrl(i),
       video_path: realVideoUrl(),
+      keyframe_id: realKeyframeId(i),
+      fps: REAL_FPS,
     }
   }
 
