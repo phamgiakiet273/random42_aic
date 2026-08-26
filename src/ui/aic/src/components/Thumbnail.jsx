@@ -15,9 +15,13 @@ export default function Thumbnail({ video, onClick }) {
       <div className="card-body p-3 gap-0.5">
         <p className="text-sm font-medium truncate">{video.title}</p>
         <p className="text-xs text-base-content/60">
-          {video.frame_name ?? '—'} · {video.timestamp}
+          {frame_name_clean(video.frame_name) ?? '—'} · {video.timestamp}
         </p>
       </div>
     </div>
   )
+}
+
+function frame_name_clean(video_frame) {
+  return (video_frame.split(".")[0]);
 }
