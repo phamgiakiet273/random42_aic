@@ -107,7 +107,7 @@ export default function FrameDetailModal({ video, onClose }) {
         <div className="modal-box max-w-2xl">
           <h3 className="font-semibold text-lg">{video.title}</h3>
           <p className="text-sm text-base-content/60 mb-4">
-            {video.video_id} · {video.timestamp}
+            {video.frame_name ?? video.video_id} · {video.timestamp}
             {startTime != null && <> · Start: {formatStartTime(startTime)}</>}
           </p>
           {video.video_path ? (

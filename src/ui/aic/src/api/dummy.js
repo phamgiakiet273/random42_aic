@@ -29,6 +29,10 @@ function realKeyframeId(index) {
   return parseInt(frame, 10)
 }
 
+function realFrameName(index) {
+  return REAL_FRAMES[index % REAL_FRAMES.length]
+}
+
 const COLORS = ['#6366f1', '#ec4899', '#22c55e', '#f97316', '#06b6d4', '#a855f7', '#ef4444', '#0ea5e9']
 
 function formatTimestamp(totalSeconds) {
@@ -50,13 +54,13 @@ const RECORD_COUNT = 100
 const records = Array.from({ length: RECORD_COUNT }, (_, i) => {
   const index = i + 1
   const timestamp = formatTimestamp(index * 37)
-  const title = `Sample keyframe ${index}`
 
   if (MEDIA_BASE_URL) {
     return {
       id: index,
       video_id: REAL_VIDEO.video,
-      title,
+      title: REAL_VIDEO.video,
+      frame_name: realFrameName(i),
       timestamp,
       thumbnail_url: realThumbnailUrl(i),
       video_path: realVideoUrl(),
@@ -68,7 +72,7 @@ const records = Array.from({ length: RECORD_COUNT }, (_, i) => {
   return {
     id: index,
     video_id: `L01_V${String(index).padStart(3, '0')}`,
-    title,
+    title: 'Invalid Keyframe',
     timestamp,
     thumbnail_url: placeholderThumbnail(`Frame ${index}`, COLORS[i % COLORS.length]),
   }

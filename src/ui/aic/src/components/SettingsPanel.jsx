@@ -96,7 +96,7 @@ export default function SettingsPanel() {
         label="Thumbnail Size"
         min={100}
         max={400}
-        step={10}
+        step={40}
         value={settings.thumbnailSize}
         onChange={(v) => settings.update({ thumbnailSize: v })}
       />
