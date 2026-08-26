@@ -43,14 +43,6 @@ export default function VideoGrid() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div
-        className="grid gap-4"
-        style={{ gridTemplateColumns: `repeat(auto-fill, minmax(min(${thumbnailSize}px, 45vw), 1fr))` }}
-      >
-        {pageItems.map((video) => (
-          <Thumbnail key={video.id} video={video} onClick={() => setSelected(video)} />
-        ))}
-      </div>
       <div className="flex justify-center">
         <Pagination
           page={page}
@@ -59,6 +51,15 @@ export default function VideoGrid() {
           onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
         />
       </div>
+      <div
+        className="grid gap-4"
+        style={{ gridTemplateColumns: `repeat(auto-fill, minmax(min(${thumbnailSize}px, 45vw), 1fr))` }}
+      >
+        {pageItems.map((video) => (
+          <Thumbnail key={video.id} video={video} onClick={() => setSelected(video)} />
+        ))}
+      </div>
+      
       <FrameDetailModal video={selected} onClose={() => setSelected(null)} />
     </div>
   )
