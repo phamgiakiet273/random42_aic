@@ -19,6 +19,7 @@ export default function FrameDetailModal({ video, onClose }) {
   const dialogRef = useRef(null)
   const videoRef = useRef(null)
   const [submitStatus, setSubmitStatus] = useState(null)
+  const [currentFrame, setCurrentFrame] = useState(null)
 
   const trakeVideoId = useTrakeStore((s) => s.videoId)
   const trakeFrames = useTrakeStore((s) => s.frames)
@@ -41,17 +42,50 @@ export default function FrameDetailModal({ video, onClose }) {
       dialog.close()
     }
     setSubmitStatus(null)
+    setCurrentFrame(video?.keyframe_id ?? null)
   }, [video])
 
   useEffect(() => {
     const el = videoRef.current
     if (!el || startTime == null) return
+    const fps = video.fps || DEFAULT_FPS
     const seekToStart = () => {
       el.currentTime = startTime
     }
+    const trackFrame = () => {
+      setCurrentFrame(Math.floor(el.currentTime * fps))
+    }
     el.addEventListener('loadedmetadata', seekToStart)
-    return () => el.removeEventListener('loadedmetadata', seekToStart)
-  }, [video?.video_path, startTime])
+    el.addEventListener('timeupdate', trackFrame)
+    return () => {
+      el.removeEventListener('loadedmetadata', seekToStart)
+      el.removeEventListener('timeupdate', trackFrame)
+    }
+  }, [video?.video_path, startTime, video?.fps])
+
+  const navigateBySeconds = (delta) => {
+    const el = videoRef.current
+    if (!el) return
+    el.pause()
+    el.currentTime = Math.max(0, Math.min(el.duration || Infinity, el.currentTime + delta))
+  }
+
+  useEffect(() => {
+    if (!trakeEnabled) return
+    const dialog = dialogRef.current
+    if (!dialog) return
+    const onKeyDown = (e) => {
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        navigateBySeconds(-1)
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        navigateBySeconds(1)
+      }
+    }
+    dialog.addEventListener('keydown', onKeyDown)
+    return () => dialog.removeEventListener('keydown', onKeyDown)
+  }, [trakeEnabled])
 
   const handleMark = () => {
     const fps = video.fps || DEFAULT_FPS
@@ -92,6 +126,27 @@ export default function FrameDetailModal({ video, onClose }) {
               alt={video.title}
               className="w-full rounded-lg aspect-video object-cover"
             />
+          )}
+          {trakeEnabled && (
+            <div className="flex items-center justify-center gap-3 mt-3 text-sm">
+              <span>
+                <strong>Current Frame:</strong> {currentFrame}
+              </span>
+              <button
+                type="button"
+                className="btn btn-xs btn-outline"
+                onClick={() => navigateBySeconds(-1)}
+              >
+                ← 1s
+              </button>
+              <button
+                type="button"
+                className="btn btn-xs btn-outline"
+                onClick={() => navigateBySeconds(1)}
+              >
+                → 1s
+              </button>
+            </div>
           )}
           {trakeEnabled && (
             <div className="mt-4 border-t border-base-300 pt-4">
