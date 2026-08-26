@@ -3,6 +3,7 @@ import Papa from 'papaparse'
 import { Link } from 'react-router-dom'
 import { toResultCsv, downloadCsvFile } from '../utils/csv'
 import { COLORS, placeholderThumbnail } from '../utils/placeholder'
+import { buildThumbnailUrl } from '../utils/media'
 import ResultCard from '../components/ResultCard'
 import FrameDetailModal from '../components/FrameDetailModal'
 
@@ -84,10 +85,9 @@ export default function ResultManagerPage() {
     title: previewRow.video_id || 'Invalid Keyframe',
     keyframe_id: previewRow.keyframe_id,
     timestamp: '',
-    thumbnail_url: placeholderThumbnail(
-      previewRow.video_id || 'Unknown Video',
-      COLORS[previewIndex % COLORS.length],
-    ),
+    thumbnail_url:
+      buildThumbnailUrl(previewRow.video_id, previewRow.keyframe_id) ||
+      placeholderThumbnail(previewRow.video_id || 'Unknown Video', COLORS[previewIndex % COLORS.length]),
   }
 
   return (

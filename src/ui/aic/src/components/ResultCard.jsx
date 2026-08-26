@@ -1,4 +1,5 @@
 import { COLORS, placeholderThumbnail } from '../utils/placeholder'
+import { buildThumbnailUrl } from '../utils/media'
 
 export default function ResultCard({
   row,
@@ -14,6 +15,8 @@ export default function ResultCard({
   onClick,
 }) {
   const label = row.video_id || 'Unknown Video'
+  const fallbackSrc = placeholderThumbnail(label, COLORS[index % COLORS.length])
+  const realSrc = buildThumbnailUrl(row.video_id, row.keyframe_id)
 
   return (
     <div
@@ -44,9 +47,13 @@ export default function ResultCard({
       <span className="badge badge-neutral absolute top-2 right-2 z-10">{index + 1}</span>
       <figure>
         <img
-          src={placeholderThumbnail(label, COLORS[index % COLORS.length])}
+          src={realSrc || fallbackSrc}
           alt={label}
+          loading="lazy"
           className="aspect-video w-full object-cover"
+          onError={(e) => {
+            if (e.target.src !== fallbackSrc) e.target.src = fallbackSrc
+          }}
         />
       </figure>
       <div className="card-body p-3 gap-0.5">
