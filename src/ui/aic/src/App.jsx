@@ -1,26 +1,22 @@
-import VideoGrid from './components/VideoGrid'
-import QueryPanel from './components/QueryPanel'
-import SettingsPanel from './components/SettingsPanel'
-import FiltersPanel from './components/FiltersPanel'
+import { Routes, Route, Link } from 'react-router-dom'
+import HomePage from './pages/HomePage'
+import ResultManagerPage from './pages/ResultManagerPage'
 
 export default function App() {
   return (
     <div className="min-h-screen bg-base-200">
-      <header className="navbar bg-base-100 shadow-sm px-4 justify-center">
-        <span className="text-lg font-semibold">Random42</span>
+      <header className="navbar bg-base-100 shadow-sm px-4">
+        <div className="flex-1">
+          <span className="text-lg font-semibold">Random42</span>
+        </div>
+        <Link to="/result-manager" className="btn btn-ghost btn-sm">
+          Result Manager
+        </Link>
       </header>
-      <main className="flex flex-col lg:flex-row gap-4 p-4">
-        <aside className="w-full lg:w-96 lg:shrink-0 flex flex-col gap-4">
-          <QueryPanel />
-          <FiltersPanel />
-        </aside>
-        <section className="flex-1 min-w-0 flex flex-col gap-4">
-          <div className="flex justify-end">
-            <SettingsPanel />
-          </div>
-          <VideoGrid />
-        </section>
-      </main>
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/result-manager" element={<ResultManagerPage />} />
+      </Routes>
     </div>
   )
 }

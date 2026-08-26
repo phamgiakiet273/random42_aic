@@ -10,6 +10,7 @@ const DEFAULTS = {
   resultsPerPage: 50,
   neighborFrameCount: 10,
   thumbnailSize: 220,
+  downloadLimit: 100,
 }
 
 export const useSettingsStore = create((set) => ({

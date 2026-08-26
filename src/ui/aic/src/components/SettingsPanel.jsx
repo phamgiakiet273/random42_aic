@@ -116,6 +116,14 @@ export default function SettingsPanel() {
               value={settings.thumbnailSize}
               onChange={(v) => settings.update({ thumbnailSize: v })}
             />
+            <SliderField
+              label="Download Limit"
+              min={1}
+              max={1000}
+              step={10}
+              value={settings.downloadLimit}
+              onChange={(v) => settings.update({ downloadLimit: v })}
+            />
 
             <button type="button" className="btn btn-ghost btn-sm mt-2" onClick={() => settings.reset()}>
               Reset Settings
