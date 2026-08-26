@@ -15,6 +15,7 @@ export default function ResultManagerPage() {
   const [previewIndex, setPreviewIndex] = useState(null)
   const [rangeFrom, setRangeFrom] = useState('')
   const [rangeTo, setRangeTo] = useState('')
+  const [filename, setFilename] = useState('query-p1-1-kis')
   const dragIndex = useRef(null)
 
   const handleFileUpload = (e) => {
@@ -96,7 +97,8 @@ export default function ResultManagerPage() {
   }
 
   const handleDownload = () => {
-    downloadCsvFile('adjusted_result.csv', toResultCsv(rows))
+    const name = `${filename.trim() || 'adjusted_result'}.csv`
+    downloadCsvFile(name, toResultCsv(rows))
   }
 
   const previewRow = previewIndex != null ? rows[previewIndex] : null
@@ -125,14 +127,24 @@ export default function ResultManagerPage() {
           onChange={handleFileUpload}
           className="file-input file-input-sm"
         />
-        <button
-          type="button"
-          className="btn btn-sm btn-primary ml-auto"
-          disabled={rows.length === 0}
-          onClick={handleDownload}
-        >
-          Download Result
-        </button>
+        <div className="flex items-center gap-1 ml-auto">
+          <input
+            type="text"
+            placeholder="adjusted_result"
+            value={filename}
+            onChange={(e) => setFilename(e.target.value)}
+            className="input input-sm w-40"
+          />
+          <span className="text-xs text-base-content/60">.csv</span>
+          <button
+            type="button"
+            className="btn btn-sm btn-primary"
+            disabled={rows.length === 0}
+            onClick={handleDownload}
+          >
+            Download Result
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
