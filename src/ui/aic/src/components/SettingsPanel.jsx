@@ -1,3 +1,5 @@
+import { useRef } from 'react'
+import { Settings } from 'lucide-react'
 import { useSettingsStore } from '../stores/settingsStore'
 import SliderField from './SliderField'
 
@@ -5,105 +7,131 @@ const FRAME_CLASSES = [0, 1, 2, 3]
 
 export default function SettingsPanel() {
   const settings = useSettingsStore()
+  const dialogRef = useRef(null)
 
   return (
-    <details className="collapse collapse-arrow bg-base-100 shadow-sm" open>
-      <summary className="collapse-title text-base font-semibold">Settings</summary>
-      <div className="collapse-content flex flex-col gap-4">
-        <label className="label cursor-pointer justify-start gap-2">
-        <input
-          type="checkbox"
-          className="checkbox checkbox-sm"
-          checked={settings.returnS2t}
-          onChange={(e) => settings.update({ returnS2t: e.target.checked })}
-        />
-        <span className="label-text">S2T Info</span>
-      </label>
+    <>
+      <button
+        type="button"
+        className="btn btn-primary btn-sm gap-1.5"
+        onClick={() => dialogRef.current?.showModal()}
+      >
+        <Settings size={16} />
+        Settings
+      </button>
 
-      <label className="label cursor-pointer justify-start gap-2">
-        <input
-          type="checkbox"
-          className="checkbox checkbox-sm"
-          checked={settings.returnObject}
-          onChange={(e) => settings.update({ returnObject: e.target.checked })}
-        />
-        <span className="label-text">Objects Info</span>
-      </label>
+      <dialog ref={dialogRef} className="modal">
+        <div className="modal-box">
+          <h3 className="font-semibold text-lg mb-4">Settings</h3>
 
-      <div>
-        <p className="text-xs uppercase tracking-wide text-base-content/60 mb-1">Frame Class Filter</p>
-        <div className="flex gap-3">
-          {FRAME_CLASSES.map((value) => (
-            <label key={value} className="label cursor-pointer gap-1">
+          <div className="flex flex-col gap-4">
+            <label className="label cursor-pointer justify-start gap-2">
               <input
                 type="checkbox"
                 className="checkbox checkbox-sm"
-                checked={settings.frameClassFilter.includes(value)}
-                onChange={() => settings.toggleFrameClass(value)}
+                checked={settings.returnS2t}
+                onChange={(e) => settings.update({ returnS2t: e.target.checked })}
               />
-              <span className="label-text">{value}</span>
+              <span className="label-text">S2T Info</span>
             </label>
-          ))}
+
+            <label className="label cursor-pointer justify-start gap-2">
+              <input
+                type="checkbox"
+                className="checkbox checkbox-sm"
+                checked={settings.returnObject}
+                onChange={(e) => settings.update({ returnObject: e.target.checked })}
+              />
+              <span className="label-text">Objects Info</span>
+            </label>
+
+            <div>
+              <p className="text-xs uppercase tracking-wide text-base-content/60 mb-1">
+                Frame Class Filter
+              </p>
+              <div className="flex gap-3">
+                {FRAME_CLASSES.map((value) => (
+                  <label key={value} className="label cursor-pointer gap-1">
+                    <input
+                      type="checkbox"
+                      className="checkbox checkbox-sm"
+                      checked={settings.frameClassFilter.includes(value)}
+                      onChange={() => settings.toggleFrameClass(value)}
+                    />
+                    <span className="label-text">{value}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <label className="label cursor-pointer justify-start gap-2">
+              <input
+                type="checkbox"
+                className="checkbox checkbox-sm"
+                checked={settings.autoTranslate}
+                onChange={(e) => settings.update({ autoTranslate: e.target.checked })}
+              />
+              <span className="label-text">Auto Translate</span>
+            </label>
+
+            <label className="label cursor-pointer justify-start gap-2">
+              <input
+                type="checkbox"
+                className="checkbox checkbox-sm"
+                checked={settings.immediateRerun}
+                onChange={(e) => settings.update({ immediateRerun: e.target.checked })}
+              />
+              <span className="label-text">Immediate Re-search on Skip</span>
+            </label>
+
+            <SliderField
+              label="Number of Results"
+              min={10}
+              max={1000}
+              step={10}
+              value={settings.topK}
+              onChange={(v) => settings.update({ topK: v })}
+            />
+            <SliderField
+              label="Results per Page"
+              min={10}
+              max={200}
+              step={10}
+              value={settings.resultsPerPage}
+              onChange={(v) => settings.update({ resultsPerPage: v })}
+            />
+            <SliderField
+              label="Neighbor Frames Count"
+              min={1}
+              max={50}
+              step={1}
+              value={settings.neighborFrameCount}
+              onChange={(v) => settings.update({ neighborFrameCount: v })}
+            />
+            <SliderField
+              label="Thumbnail Size"
+              min={100}
+              max={400}
+              step={40}
+              value={settings.thumbnailSize}
+              onChange={(v) => settings.update({ thumbnailSize: v })}
+            />
+
+            <button type="button" className="btn btn-ghost btn-sm mt-2" onClick={() => settings.reset()}>
+              Reset Settings
+            </button>
+          </div>
+
+          <div className="modal-action">
+            <form method="dialog">
+              <button className="btn">Close</button>
+            </form>
+          </div>
         </div>
-      </div>
-
-      <label className="label cursor-pointer justify-start gap-2">
-        <input
-          type="checkbox"
-          className="checkbox checkbox-sm"
-          checked={settings.autoTranslate}
-          onChange={(e) => settings.update({ autoTranslate: e.target.checked })}
-        />
-        <span className="label-text">Auto Translate</span>
-      </label>
-
-      <label className="label cursor-pointer justify-start gap-2">
-        <input
-          type="checkbox"
-          className="checkbox checkbox-sm"
-          checked={settings.immediateRerun}
-          onChange={(e) => settings.update({ immediateRerun: e.target.checked })}
-        />
-        <span className="label-text">Immediate Re-search on Skip</span>
-      </label>
-
-      <SliderField
-        label="Number of Results"
-        min={10}
-        max={1000}
-        step={10}
-        value={settings.topK}
-        onChange={(v) => settings.update({ topK: v })}
-      />
-      <SliderField
-        label="Results per Page"
-        min={10}
-        max={200}
-        step={10}
-        value={settings.resultsPerPage}
-        onChange={(v) => settings.update({ resultsPerPage: v })}
-      />
-      <SliderField
-        label="Neighbor Frames Count"
-        min={1}
-        max={50}
-        step={1}
-        value={settings.neighborFrameCount}
-        onChange={(v) => settings.update({ neighborFrameCount: v })}
-      />
-      <SliderField
-        label="Thumbnail Size"
-        min={100}
-        max={400}
-        step={40}
-        value={settings.thumbnailSize}
-        onChange={(v) => settings.update({ thumbnailSize: v })}
-      />
-
-        <button type="button" className="btn btn-ghost btn-sm mt-2" onClick={() => settings.reset()}>
-          Reset Settings
-        </button>
-      </div>
-    </details>
+        <form method="dialog" className="modal-backdrop">
+          <button>close</button>
+        </form>
+      </dialog>
+    </>
   )
 }

@@ -23,5 +23,5 @@ export default function Thumbnail({ video, onClick }) {
 }
 
 function frame_name_clean(video_frame) {
-  return (video_frame || "".split(".")[0]);
+  return (video_frame || "").split(".")[0];
 }

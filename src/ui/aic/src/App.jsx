@@ -10,12 +10,14 @@ export default function App() {
         <span className="text-lg font-semibold">Random42</span>
       </header>
       <main className="flex flex-col lg:flex-row gap-4 p-4">
-        <aside className="w-full lg:w-96 lg:shrink-0 flex flex-col gap-4 lg:h-[calc(100vh-6rem)] lg:overflow-y-auto">
+        <aside className="w-full lg:w-96 lg:shrink-0 flex flex-col gap-4">
           <QueryPanel />
           <FiltersPanel />
-          <SettingsPanel />
         </aside>
-        <section className="flex-1 min-w-0">
+        <section className="flex-1 min-w-0 flex flex-col gap-4">
+          <div className="flex justify-end">
+            <SettingsPanel />
+          </div>
           <VideoGrid />
         </section>
       </main>
