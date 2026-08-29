@@ -4,20 +4,20 @@ Replaces `routes/hub_router.py` + the hub-facing endpoints of
 `handlers/hub_handler.py`. Swagger example defaults on `Form(...)` params are
 kept here (this is the right layer for them), matching the legacy router.
 
-Legacy only wired `siglip_alpha_*`/`siglip_beta_*` passthrough routes; the
-`/{variant}_*` routes below are generated for `siglip_alpha`, `siglip_beta`,
-*and* `metaclip` since `HubGatewayService` generalized its passthrough methods
-over a `variant` argument (see src/services/hub_service.py) instead of one
-copy-pasted method set per CLIP backend.
+Retrieval is exposed through one ``POST /hub/search`` endpoint.  Its ``model``
+is resolved through the configured model registry and ``search_type`` selects
+the supported backend operation.
 """
 
 from __future__ import annotations
 
 import ujson
-from fastapi import APIRouter, Form
+from fastapi import APIRouter, Form, HTTPException
 from fastapi.responses import FileResponse, RedirectResponse
+from pydantic import ValidationError
 
 from src.common.schemas.api import APIResponse
+from src.common.schemas.hub import SearchRequest
 from src.common.schemas.rerank import VideoMetadata
 from src.services.hub_service import HubGatewayService
 
@@ -142,6 +142,48 @@ def _register_clip_variant_routes(
 def build_router(service: HubGatewayService) -> APIRouter:
     router = APIRouter(prefix="/hub", tags=["hub"])
 
+    @router.post("/search")
+    async def search(
+        model: str = Form(...),
+        search_type: str = Form(...),
+        text: str | None = Form(None),
+        image_path: str | None = Form(None),
+        k: int = Form(100),
+        video_filter: str | None = Form(None),
+        s2t_filter: str | None = Form(None),
+        time_in: str | None = Form(None),
+        time_out: str | None = Form(None),
+        return_s2t: bool = Form(True),
+        return_object: bool = Form(True),
+        frame_class_filter: str = Form("[]"),
+        skip_frames: str = Form("[]"),
+        sort_to_news: bool = Form(True),
+        main_event_index: int = Form(0),
+        utility_feature: str = Form("shot"),
+    ) -> APIResponse:
+        try:
+            request = SearchRequest(
+                model=model,
+                search_type=search_type,
+                text=text,
+                image_path=image_path,
+                k=k,
+                video_filter=video_filter,
+                s2t_filter=s2t_filter,
+                time_in=time_in,
+                time_out=time_out,
+                return_s2t=return_s2t,
+                return_object=return_object,
+                frame_class_filter=ujson.loads(frame_class_filter),
+                skip_frames=ujson.loads(skip_frames),
+                sort_to_news=sort_to_news,
+                main_event_index=main_event_index,
+                utility_feature=utility_feature,
+            )
+        except (TypeError, ValueError, ValidationError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return await service.search(request)
+
     @router.get("/ping")
     async def ping() -> APIResponse:
         return await service.ping()
@@ -230,8 +272,5 @@ def build_router(service: HubGatewayService) -> APIRouter:
     @router.post("/get_video_names_of_batch")
     async def get_video_names_of_batch(batch_id: str = Form("[0, 1]")) -> APIResponse:
         return await service.get_video_names_of_batch(ujson.loads(batch_id))
-
-    for variant in _CLIP_VARIANTS:
-        _register_clip_variant_routes(router, service, variant)
 
     return router

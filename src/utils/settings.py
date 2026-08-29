@@ -12,6 +12,8 @@ from functools import lru_cache
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from src.common.schemas.hub import SearchModelConfig
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -45,6 +47,11 @@ class Settings(BaseSettings):
     hub_port: int = Field(9021, alias="HUB_PORT")
     hub_max_workers: int = Field(5, alias="HUB_MAX_WORKERS")
     base_url: str = Field("http://localhost:9021/", alias="BASE_URL")
+    # Optional JSON object keyed by public model name.  When unset, the three
+    # legacy model URL settings below provide the default registry.
+    search_model_registry: dict[str, SearchModelConfig] | None = Field(
+        None, alias="SEARCH_MODEL_REGISTRY"
+    )
 
     # --- Result manager ---
     result_manager_host: str = Field("0.0.0.0", alias="RESULT_MANAGER_HOST")

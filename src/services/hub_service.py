@@ -49,6 +49,7 @@ from fastapi import HTTPException
 from PIL import Image
 
 from src.common.schemas.api import APIResponse
+from src.common.schemas.hub import SearchModelConfig, SearchRequest
 from src.common.schemas.rerank import VideoMetadata
 from src.utils.logger import get_logger
 from src.utils.settings import get_settings
@@ -58,8 +59,6 @@ logger = get_logger()
 
 class HubGatewayService:
     """Gateway/orchestration layer sitting in front of the other 6 services."""
-
-    _CLIP_VARIANTS = ("siglip_alpha", "siglip_beta", "metaclip")
 
     def __init__(self, request_timeout: int | None = None) -> None:
         self._settings = get_settings()
@@ -113,7 +112,9 @@ class HubGatewayService:
         url = f"{self._settings.rerank_host_public}/rerank/rerank_color"
         json_data = await self._post_json(url, payload, "Rerank color")
         return APIResponse(
-            status=HTTPStatus.OK.value, message="Running (Healthy)", data=json_data
+            status=json_data.get("status", HTTPStatus.OK.value),
+            message=json_data.get("message", "Rerank result"),
+            data=json_data.get("data"),
         )
 
     # ---- translate ----
@@ -298,18 +299,83 @@ class HubGatewayService:
 
     # ---- CLIP backend passthrough (siglip_alpha / siglip_beta / metaclip) ----
 
-    def _clip_host(self, variant: str) -> str:
+    def _model_registry(self) -> dict[str, SearchModelConfig]:
         settings = self._settings
-        hosts = {
-            "siglip_alpha": settings.siglip_v2_host_public,
-            "siglip_beta": settings.siglip_v2_b_host_public,
-            "metaclip": settings.metaclip_host_public,
+        if settings.search_model_registry:
+            return settings.search_model_registry
+        return {
+            "siglip_alpha": SearchModelConfig(
+                base_url=settings.siglip_v2_host_public,
+                backend_prefix="siglip_alpha",
+            ),
+            "siglip_beta": SearchModelConfig(
+                base_url=settings.siglip_v2_b_host_public,
+                backend_prefix="siglip_beta",
+            ),
+            "metaclip": SearchModelConfig(
+                base_url=settings.metaclip_host_public,
+                backend_prefix="metaclip",
+            ),
         }
-        if variant not in hosts:
-            raise ValueError(
-                f"Unknown CLIP variant {variant!r}, expected one of {self._CLIP_VARIANTS}"
+
+    def _model_config(self, model: str) -> SearchModelConfig:
+        registry = self._model_registry()
+        if model not in registry:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown model {model!r}. Available models: {', '.join(sorted(registry))}",
             )
-        return hosts[variant]
+        return registry[model]
+
+    def _clip_endpoint(self, model: str, search_type: str) -> str:
+        config = self._model_config(model)
+        if search_type not in config.search_types:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Model {model!r} does not support {search_type!r} search",
+            )
+        suffix = "scroll" if search_type == "scroll" else f"{search_type}_search"
+        return f"{config.base_url.rstrip('/')}/{config.backend_prefix}/{suffix}"
+
+    async def search(self, request: SearchRequest) -> APIResponse:
+        self._clip_endpoint(request.model, request.search_type)
+        common = {
+            "k": request.k,
+            "video_filter": request.video_filter,
+            "s2t_filter": request.s2t_filter,
+            "return_s2t": request.return_s2t,
+            "return_object": request.return_object,
+            "frame_class_filter": request.frame_class_filter,
+            "skip_frames": request.skip_frames,
+            "sort_to_news": request.sort_to_news,
+        }
+        if request.search_type == "text":
+            return await self.clip_text_search(request.model, request.text or "", **common)
+        if request.search_type == "image":
+            return await self.clip_image_search_from_path(
+                request.model, request.image_path or "", **common
+            )
+        if request.search_type == "temporal":
+            return await self.clip_temporal_search(
+                request.model,
+                request.text or "",
+                main_event_index=request.main_event_index,
+                **common,
+            )
+        return await self.clip_scroll(
+            request.model,
+            k=request.k,
+            video_filter=request.video_filter or "",
+            s2t_filter=request.s2t_filter,
+            time_in=request.time_in,
+            time_out=request.time_out,
+            return_s2t=request.return_s2t,
+            return_object=request.return_object,
+            frame_class_filter=request.frame_class_filter,
+            skip_frames=request.skip_frames,
+            sort_to_news=request.sort_to_news,
+            utility_feature=request.utility_feature,
+        )
 
     async def clip_text_search(
         self,
@@ -324,7 +390,7 @@ class HubGatewayService:
         skip_frames: list[dict] | None = None,
         sort_to_news: bool = True,
     ) -> APIResponse:
-        url = f"{self._clip_host(variant)}/{variant}/text_search"
+        url = self._clip_endpoint(variant, "text")
         payload = {
             "text": text,
             "k": k,
@@ -357,7 +423,7 @@ class HubGatewayService:
         sort_to_news: bool = True,
     ) -> APIResponse:
         """`image_data` is base64-encoded image bytes."""
-        url = f"{self._clip_host(variant)}/{variant}/image_search"
+        url = self._clip_endpoint(variant, "image")
         payload = {
             "image_data": image_data,
             "k": k,
@@ -442,7 +508,7 @@ class HubGatewayService:
         sort_to_news: bool = True,
         main_event_index: int = 0,
     ) -> APIResponse:
-        url = f"{self._clip_host(variant)}/{variant}/temporal_search"
+        url = self._clip_endpoint(variant, "temporal")
         payload = {
             "text": text,
             "k": k,
@@ -477,7 +543,7 @@ class HubGatewayService:
         sort_to_news: bool = True,
         utility_feature: str = "shot",
     ) -> APIResponse:
-        url = f"{self._clip_host(variant)}/{variant}/scroll"
+        url = self._clip_endpoint(variant, "scroll")
         payload = {
             "k": k,
             "video_filter": video_filter,

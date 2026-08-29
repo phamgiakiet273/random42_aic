@@ -18,23 +18,6 @@ function countSentences(text) {
     return matches ? matches.filter(s => s.trim().length).length : 0;
 }
 
-// Define API routes for each model and query type
-const ROUTES = {
-    SIGLIP_ALPHA: {
-        text: 'hub/siglip_alpha_text_search',
-        image: 'hub/siglip_alpha_image_search',
-        temporal: 'hub/siglip_alpha_temporal_search',
-        scroll: 'hub/siglip_alpha_scroll'
-    },
-    SIGLIP_BETA: {
-        text: 'hub/siglip_beta_text_search',
-        image: 'hub/siglip_beta_image_search',
-        temporal: 'hub/siglip_beta_temporal_search',
-        scroll: 'hub/siglip_beta_scroll'
-    },
-};
-
-
 let temporalEvents = [];
 let mainEventIndex = 0;
 
@@ -271,15 +254,8 @@ export function initSearchHandler() {
             slider.value = kVal;
             kInput.value = kVal;
 
-            // Determine API URL
-            const routeSet = ROUTES[activeModel] || {};
-            let url = routeSet[queryType] || '';
-
-            if (!url) {
-                alert('Invalid model or query type');
-                hideLoadingOverlay();
-                return;
-            }
+            fd.set('model', activeModel.toLowerCase());
+            fd.set('search_type', queryType);
 
             // Additional params for image query
             if (queryType == 'image') {
@@ -319,7 +295,7 @@ export function initSearchHandler() {
 
 
             // Build full URL with prefix
-            const fullUrl = buildUrl(url);
+            const fullUrl = buildUrl('hub/search');
 
             // Execute request
             const resp = await fetch(fullUrl, { method: 'POST', body: fd });
@@ -349,7 +325,7 @@ export function initSearchHandler() {
                     returnObject,
                     frameClassValues
                 },
-                results: payload.data.data // Store actual results
+                results: payload.data // Store actual results
             };
 
             // Update history with full context
@@ -436,14 +412,6 @@ export async function performScrollSearch(record, utilityFeature = 'shot') {
             activeModel = model.replace('TEMPORAL_', '');
         }
 
-        // Get scroll endpoint
-        const routeSet = ROUTES[activeModel] || {};
-        const url = routeSet.scroll || '';
-
-        if (!url) {
-            throw new Error('Scroll endpoint not available for this model');
-        }
-
         // Get current settings
         const kVal = document.getElementById('k').value;
         const returnS2T = document.getElementById('return-s2t-checkbox').checked;
@@ -482,9 +450,11 @@ export async function performScrollSearch(record, utilityFeature = 'shot') {
         fd.set('time_in', startTime);
         fd.set('time_out', endTime);
         fd.set('utility_feature', utilityFeature); // Add utility feature
+        fd.set('model', activeModel.toLowerCase());
+        fd.set('search_type', 'scroll');
 
         // Build full URL
-        const fullUrl = buildUrl(url);
+        const fullUrl = buildUrl('hub/search');
 
         // Execute request
         const resp = await fetch(fullUrl, { method: 'POST', body: fd });
@@ -514,7 +484,7 @@ export async function performScrollSearch(record, utilityFeature = 'shot') {
                 returnObject,
                 frameClassValues
             },
-            results: payload.data.data
+            results: payload.data
         };
 
         // Find the index of the original frame in the results

@@ -58,12 +58,8 @@ export function initRerankHandler() {
 
                 const payload = await response.json();
 
-                // Handle the response structure properly
                 if (payload.data && Array.isArray(payload.data)) {
                     window.currentVideos = payload.data;
-                } else if (payload.data && Array.isArray(payload.data.data)) {
-                    // Handle nested data structure
-                    window.currentVideos = payload.data.data;
                 } else {
                     throw new Error('Invalid rerank response format');
                 }

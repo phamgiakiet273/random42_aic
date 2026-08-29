@@ -85,9 +85,10 @@ Base URL: `http://<host>:9021/hub`.
 
 ### Retrieval
 
-All retrieval endpoints are `POST` form-data requests.  Their successful
+All retrieval operations use **`POST /search`** with form-data. Its successful
 response is the common response envelope with a list of ranked frame records
-in `data`.
+in `data`. `model` is a configured registry key; the built-in fallback keys
+are `siglip_alpha`, `siglip_beta`, and `metaclip`.
 
 Shared optional form fields:
 
@@ -102,21 +103,15 @@ Shared optional form fields:
 | `frame_class_filter` | JSON string, `[]` | Frame-class IDs, for example `[1, 4]`. |
 | `skip_frames` | JSON string, `[]` | Frames/ranges to omit. |
 | `sort_to_news` | boolean, `true` | Apply the service's news-oriented result ordering. |
+| `model` | string | Required model-registry key. |
+| `search_type` | `text`, `image`, `temporal`, or `scroll` | Required operation selector. |
 
-| Endpoint | Required fields | Additional fields | Purpose |
+| `search_type` | Required fields | Additional fields | Purpose |
 | --- | --- | --- | --- |
-| `POST /siglip_alpha_text_search` | `text` | shared fields | Text-to-frame search using SigLIP Alpha. |
-| `POST /siglip_beta_text_search` | `text` | shared fields | Text-to-frame search using SigLIP Beta. |
-| `POST /metaclip_text_search` | `text` | shared fields | Text-to-frame search using MetaCLIP. |
-| `POST /siglip_alpha_image_search` | `image_path` | shared fields | Search by a readable image path. |
-| `POST /siglip_beta_image_search` | `image_path` | shared fields | Search by a readable image path. |
-| `POST /metaclip_image_search` | `image_path` | shared fields | Search by a readable image path. |
-| `POST /siglip_alpha_temporal_search` | `text` | shared fields, `main_event_index` | Text search with temporal-event handling. |
-| `POST /siglip_beta_temporal_search` | `text` | shared fields, `main_event_index` | Same, using SigLIP Beta. |
-| `POST /metaclip_temporal_search` | `text` | shared fields, `main_event_index` | Same, using MetaCLIP. |
-| `POST /siglip_alpha_scroll` | `video_filter` | `k`, time/filter/return fields, `utility_feature` | Browse frames from a selected video/filter. |
-| `POST /siglip_beta_scroll` | `video_filter` | same | Browse using SigLIP Beta collection. |
-| `POST /metaclip_scroll` | `video_filter` | same | Browse using MetaCLIP collection. |
+| `text` | `text` | shared fields | Text-to-frame search. |
+| `image` | `image_path` | shared fields | Search by a readable image path. |
+| `temporal` | `text` | shared fields, `main_event_index` | Text search with temporal-event handling. |
+| `scroll` | `video_filter` | `k`, time/filter/return fields, `utility_feature` | Browse frames from a selected video/filter. |
 
 `main_event_index` is an integer with default `0`.  `utility_feature` defaults
 to `shot` for scroll.  `image_path` is a server-readable path, not base64 image
@@ -125,11 +120,54 @@ content; it must be accessible to the hub container.
 Example text search:
 
 ```bash
-curl -X POST http://<host>:9021/hub/siglip_alpha_text_search \
+curl -X POST http://<host>:9021/hub/search \
+  -F 'model=siglip_alpha' \
+  -F 'search_type=text' \
   -F 'text=a red car driving on a city street' \
   -F 'k=10' \
   -F 'return_s2t=true' \
   -F 'frame_class_filter=[]'
+```
+
+Example image search:
+
+```bash
+curl -X POST http://<host>:9021/hub/search \
+  -F 'model=siglip_alpha' \
+  -F 'search_type=image' \
+  -F 'image_path=/app/data/query/example.jpg' \
+  -F 'k=10' \
+  -F 'return_s2t=true' \
+  -F 'frame_class_filter=[]'
+```
+
+`image_path` may also be a `data:image/...` URI or an HTTP(S) image URL, as
+long as the hub container can read it.
+
+Example temporal search:
+
+```bash
+curl -X POST http://<host>:9021/hub/search \
+  -F 'model=siglip_alpha' \
+  -F 'search_type=temporal' \
+  -F 'text=a person enters a room. Then the person sits at a desk.' \
+  -F 'main_event_index=0' \
+  -F 'k=10' \
+  -F 'return_s2t=true' \
+  -F 'frame_class_filter=[]'
+```
+
+Example scroll search:
+
+```bash
+curl -X POST http://<host>:9021/hub/search \
+  -F 'model=siglip_alpha' \
+  -F 'search_type=scroll' \
+  -F 'video_filter=L28_V009' \
+  -F 'time_in=1000' \
+  -F 'time_out=5000' \
+  -F 'utility_feature=shot' \
+  -F 'k=20'
 ```
 
 Example response:
