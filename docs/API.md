@@ -57,27 +57,62 @@ current machine/LAN.
 
 ## Common retrieval result
 
-Search endpoints return `data` as an array of ranked frame records.  The exact
-set depends on the collection payload, but a record has this shape:
+Search endpoints return `data` as an array of ranked frame records:
 
 ```json
 {
-  "key": "0_000123",
-  "idx_folder": "0",
-  "video_name": "video_001",
-  "keyframe_id": "000123",
+  "key": "705529",
+  "idx_folder": 1,
+  "video_name": "K15_V011.mp4",
+  "keyframe_id": "05855",
   "fps": 25.0,
-  "score": 0.8732,
-  "s2t": ["transcript segment"],
-  "object": [{"object": "car", "conf": 0.94, "bbox": [10, 20, 100, 80]}],
-  "index": 123,
-  "video_path": "http://<host>:9027/video/video_001.mp4",
-  "frame_path": "http://<host>:9027/img/.../000123.jpg"
+  "score": 0.1272948384284973,
+  "frame_class": 2,
+  "is_unique": true,
+  "related_start_frame": 5003,
+  "related_end_frame": 6384,
+  "s2t": ["trong", "cai", "quy dinh"],
+  "index": 0
 }
 ```
 
-`s2t`, `object`, and the generated media paths can be absent when not requested
-or unavailable in the dataset.
+Records are returned in final rank order; `index` is that rank. Clients should
+not re-sort (doc comment [o]).
+
+### Changes from the 2025 shape
+
+- **Numbers are numbers.** `idx_folder`, `frame_class` and `related_*` are
+  integers, `fps` and `score` floats. They used to be stringified here and
+  re-parsed by every consumer.
+- **`s2t` is a real JSON array.** It used to be `str(payload["s2t"])`, i.e. a
+  Python repr with single quotes that no JSON parser accepts.
+- **`object` and `return_object` are gone** (doc comment [k]). The field was
+  empty on all 872,631 indexed points.
+- **`frame_path` / `video_path` are gone** (doc comments [p]/[t]). Records carry
+  identifiers only; clients build media URLs from `GET /hub/media_config`.
+- **Scroll results carry `score: 0.0`**, not the previous fabricated `"0.273"`.
+
+### Building media URLs
+
+`GET /hub/media_config` returns the dataset layout rule:
+
+```json
+{
+  "image_base_url": "http://<host>:9027/img",
+  "video_base_url": "http://<host>:9027/video",
+  "frame_template": "{batch}/frames/{split}/Keyframes_{prefix}/keyframes/{video}/{keyframe}{ext}",
+  "video_template": "{batch}/videos/Videos_{prefix}/video/{video}.mp4",
+  "split": "low_res_autoshot",
+  "split_original": "low_res_autoshot",
+  "frame_ext": ".avif",
+  "keyframe_pad": 5
+}
+```
+
+Substitute `batch` = `idx_folder`, `video` = `video_name` without its extension,
+`prefix` = the part before the first underscore, `keyframe` = `keyframe_id`
+zero-padded to `keyframe_pad`. `src/utils/dataset_layout.py` owns this rule
+server-side; nothing else should hardcode a copy.
 
 ## Hub API (recommended client API)
 
@@ -99,7 +134,6 @@ Shared optional form fields:
 | `s2t_filter` | string or omitted | Limit by speech-to-text content. |
 | `time_in`, `time_out` | string or omitted | Time-range filter. |
 | `return_s2t` | boolean, `true` | Include transcript payload. |
-| `return_object` | boolean, `true` | Include object-detection payload. |
 | `frame_class_filter` | JSON string, `[]` | Frame-class IDs, for example `[1, 4]`. |
 | `skip_frames` | JSON string, `[]` | Frames/ranges to omit. |
 | `sort_to_news` | boolean, `true` | Apply the service's news-oriented result ordering. |
@@ -181,10 +215,32 @@ Example response:
       "video_name": "video_001",
       "keyframe_id": "000123",
       "score": 0.8732,
-      "frame_path": "http://<host>:9027/img/.../000123.jpg"
+      "index": 0
     }
   ]
 }
+```
+
+### Result export
+
+`POST /hub/download` renders the current result set as a submission CSV
+(doc comment [l]). It takes the same fields as `POST /hub/search`, plus:
+
+- `format` (`kis` | `trake`, default `kis`)
+- `limit` (integer, default `100`)
+
+It is **stateless** — it re-runs the query rather than reading a cached "current
+search", because the hub serves requests from several worker processes.
+
+`kis` emits one `video,keyframe` per row; `trake` emits one row per video as
+`video,frame1,frame2,...`. Neither format has a header row.
+
+```bash
+curl -X POST http://<host>:9021/hub/download \
+  -F 'model=siglip_alpha' \
+  -F 'search_type=text' \
+  -F 'text=a red car driving on a city street' \
+  -F 'format=kis' -F 'limit=100'
 ```
 
 ### Utility and result operations
@@ -272,7 +328,6 @@ http://<host>:9031/metaclip
   "time_in": null,
   "time_out": null,
   "return_s2t": true,
-  "return_object": true,
   "frame_class_filter": null,
   "skip_frames": [],
   "utility_feature": "shot"
@@ -291,7 +346,6 @@ body; provide either `text` or `image_data` according to the endpoint:
   "time_in": null,
   "time_out": null,
   "return_s2t": true,
-  "return_object": true,
   "frame_class_filter": null,
   "skip_frames": [],
   "sort_to_news": true,
@@ -364,8 +418,8 @@ Base URL: `http://<host>:9126/rerank`.
 | `POST /rerank_color` | JSON array of frame records | Same records reordered by color similarity. |
 
 Each submitted record must contain `key`, `idx_folder`, `video_name`,
-`keyframe_id`, `fps`, `score`, `s2t`, `object`, `index`, `video_path`, and
-`frame_path`.  The direct reranker is only usable when its supporting rerank
+`keyframe_id`, `fps`, `score`, `s2t`, and `index`.  The direct reranker is only
+usable when its supporting rerank
 data is deployed.
 
 ## Submission API (direct)

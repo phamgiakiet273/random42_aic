@@ -128,6 +128,23 @@ All runtime configuration is one `Settings` object (`src/utils/settings.py`, pyd
 
 ## Development
 
+`src/` is bind-mounted into every container (read-only), so a backend code
+change needs a **restart, not a rebuild**:
+
+```bash
+docker compose -f docker-compose-server.yml restart util     # picks up src/ changes
+docker compose -f docker-compose-local.yml  restart hub
+```
+
+Rebuild (`docker compose ... build <service>`) only when dependencies change —
+`requirements.txt`, the Dockerfiles, or the Python version.
+
+The frontend dev server polls for changes (`src/ui/aic/vite.config.js`): the repo
+lives on a 9p/DrvFs mount where inotify events are never delivered, so without
+polling Vite silently serves the files it read at startup and no refresh helps.
+
+## Development tooling
+
 ```bash
 pip install pre-commit
 pre-commit install   # runs ruff (lint + format) and basic hygiene checks on every commit
