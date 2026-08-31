@@ -5,6 +5,8 @@ from __future__ import annotations
 import bisect
 import glob
 import os
+import pickle
+import time
 from collections import defaultdict
 from typing import Any
 
@@ -19,6 +21,10 @@ from src.utils.logger import get_logger
 from src.utils.settings import get_settings
 
 logger = get_logger()
+
+# Distinguishes "signature not computed yet" from "signature unavailable"
+# (None), so an unreadable dataset is not re-probed on every cached item.
+_UNSET: Any = object()
 
 
 class QdrantSearchClient:
@@ -56,12 +62,100 @@ class QdrantSearchClient:
             timeout=self.timeout,
         )
 
-        self.frame_names = self._prepare_data(dataset_root)
-        self.img_dups = self._prepare_dup(dup_folder_path)
-        self.img_uniques = self._prepare_unique(unique_folder_path)
+        # These three walk the keyframe tree and open ~3000 small JSON files.
+        # On this deployment the dataset lives on /mnt/e, a 9p mount where every
+        # stat/open is a round trip -- measured at 93s of pure I/O wait on every
+        # startup, with the process parked in D state on p9_client_rpc. The
+        # dataset is static between runs, so results are memoised to local disk.
+        self._prep_paths = (dup_folder_path, unique_folder_path, dataset_root)
+        self._prep_sig: tuple[int, int, int] | None = _UNSET
+        self.frame_names = self._cached(
+            "frame_names", lambda: self._prepare_data(dataset_root)
+        )
+        self.img_dups = self._cached(
+            "img_dups", lambda: self._prepare_dup(dup_folder_path)
+        )
+        self.img_uniques = self._cached(
+            "img_uniques", lambda: self._prepare_unique(unique_folder_path)
+        )
         logger.info(
             f"Qdrant connection established on port {qdrant_port} (collection={collection_name})"
         )
+
+    def _prep_signature(self) -> tuple[int, int, int] | None:
+        """Cheap fingerprint of the `_prepare_*` inputs: three directory
+        listings versus their ~3000 file opens. Catches videos added/removed."""
+        if self._prep_sig is not _UNSET:
+            return self._prep_sig
+        dup_folder, unique_folder, dataset_root = self._prep_paths
+        try:
+            signature = (
+                len(os.listdir(dup_folder)),
+                len(os.listdir(unique_folder)),
+                len(
+                    glob.glob(
+                        os.path.join(
+                            dataset_root,
+                            "frames",
+                            get_settings().split_name_low_res,
+                            "Keyframes_*",
+                        )
+                    )
+                ),
+            )
+        except OSError as exc:
+            logger.warning(f"prep signature unavailable ({exc}); cache disabled")
+            self._prep_sig = None
+        else:
+            self._prep_sig = signature
+        return self._prep_sig
+
+    def _cached(self, name: str, builder):
+        """Memoise a `_prepare_*` result on local disk, invalidated by
+        `_prep_signature()`. Force a rebuild with QDRANT_PREP_CACHE_REBUILD=1."""
+        base = os.getenv(
+            "QDRANT_PREP_CACHE",
+            os.path.expanduser("~/.cache/random42_aic/qdrant_prep"),
+        )
+        sig = self._prep_signature()
+        force = os.getenv("QDRANT_PREP_CACHE_REBUILD", "").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        path = os.path.join(base, f"{name}.pkl")
+
+        if sig is not None and not force and os.path.isfile(path):
+            try:
+                with open(path, "rb") as handle:
+                    blob = pickle.load(handle)
+                if blob.get("sig") == sig:
+                    logger.info(f"{name}: loaded from cache")
+                    return blob["data"]
+                logger.info(f"{name}: dataset changed, rebuilding cache")
+            except Exception as exc:  # noqa: BLE001 - a bad cache must never be fatal
+                logger.warning(f"{name}: cache unreadable ({exc}), rebuilding")
+
+        started = time.time()
+        data = builder()
+        logger.info(f"{name}: built in {time.time() - started:.0f}s")
+
+        if sig is not None:
+            try:
+                os.makedirs(base, exist_ok=True)
+                tmp = f"{path}.tmp"
+                with open(tmp, "wb") as handle:
+                    pickle.dump(
+                        {"sig": sig, "data": data},
+                        handle,
+                        protocol=pickle.HIGHEST_PROTOCOL,
+                    )
+                # Atomic, so a crash mid-write cannot leave a torn cache behind.
+                os.replace(tmp, path)
+                logger.info(f"{name}: cached to {path}")
+            except OSError as exc:
+                logger.warning(f"{name}: could not write cache ({exc})")
+        return data
 
     def add_database(
         self,
@@ -279,7 +373,6 @@ class QdrantSearchClient:
         frame_class_filter: list | None = None,
         skip_frames: list | None = None,
         return_s2t: bool = True,
-        return_object: bool = True,
     ):
         """Fetch points by id range (`feature="shot"`) or by precomputed dup/unique id lists."""
         if feature == "shot":
@@ -301,7 +394,6 @@ class QdrantSearchClient:
             scroll_result,
             use_query=False,
             return_s2t=return_s2t,
-            return_object=return_object,
         )
         logger.info("Processed retrieval")
         return return_result
@@ -316,7 +408,6 @@ class QdrantSearchClient:
         skip_frames: list | None = None,
         sort_to_news: bool = True,
         return_s2t: bool = True,
-        return_object: bool = True,
     ):
         """Single-vector similarity search with optional video/s2t/frame-class filters and news-style grouping."""
         frame_class_filter = frame_class_filter or []
@@ -335,7 +426,7 @@ class QdrantSearchClient:
         ).points
 
         return_result = self._format_search_results(
-            search_results, return_s2t=return_s2t, return_object=return_object
+            search_results, return_s2t=return_s2t
         )
 
         if sort_to_news:
@@ -360,7 +451,6 @@ class QdrantSearchClient:
         frame_class_filter: list | None = None,
         skip_frames: list | None = None,
         return_s2t: bool = True,
-        return_object: bool = True,
     ):
         """Multi-event temporal search: search the main event, then chain neighboring events forward/backward."""
         frame_class_filter = frame_class_filter or []
@@ -381,7 +471,7 @@ class QdrantSearchClient:
         ).points
 
         return_result = self._format_search_results(
-            search_results, return_s2t=return_s2t, return_object=return_object
+            search_results, return_s2t=return_s2t
         )
         search_results = [[result] for result in return_result]
         previous_search_results = search_results
@@ -414,7 +504,7 @@ class QdrantSearchClient:
             ).points
 
             return_result = self._format_search_results(
-                search_results, return_s2t=return_s2t, return_object=return_object
+                search_results, return_s2t=return_s2t
             )
             search_results = merge_scores_reverse(
                 return_result, previous_search_results
@@ -449,7 +539,7 @@ class QdrantSearchClient:
             ).points
 
             return_result = self._format_search_results(
-                search_results, return_s2t=return_s2t, return_object=return_object
+                search_results, return_s2t=return_s2t
             )
             search_results = merge_scores(previous_search_results, return_result)
             previous_search_results = search_results
@@ -559,31 +649,33 @@ class QdrantSearchClient:
         search_results,
         use_query: bool = True,
         return_s2t: bool = False,
-        return_object: bool = False,
     ) -> list[dict]:
+        """Project Qdrant hits into the wire record shape.
+
+        Numbers stay numbers and `s2t` is a real JSON array (legacy stringified
+        both). Scroll has no query vector, so its records carry `score: 0.0`
+        rather than the old fabricated "0.273".
+        """
         return_result = []
 
         for item in search_results:
             payload = item.payload
-            key = str(item.id)
-            score = str(item.score) if use_query else "0.273"
+            s2t = payload.get("s2t") or []
 
             result = {
-                "key": key,
-                "idx_folder": str(payload["idx_folder"]),
+                "key": str(item.id),
+                "idx_folder": int(payload["idx_folder"]),
                 "video_name": str(payload["video_name"]),
                 "keyframe_id": str(payload["frame_name"]).zfill(5),
-                "fps": str(payload["fps"]),
-                "score": score,
-                "frame_class": str(payload["frame_class"]),
-                "is_unique": payload["is_unique"],
-                "related_start_frame": str(payload["related_start_frame"]),
-                "related_end_frame": str(payload["related_end_frame"]),
+                "fps": float(payload["fps"]),
+                "score": float(item.score) if use_query else 0.0,
+                "frame_class": int(payload["frame_class"]),
+                "is_unique": bool(payload["is_unique"]),
+                "related_start_frame": int(payload["related_start_frame"]),
+                "related_end_frame": int(payload["related_end_frame"]),
             }
             if return_s2t:
-                result["s2t"] = str(payload["s2t"])
-            if return_object:
-                result["object"] = ""
+                result["s2t"] = list(s2t) if isinstance(s2t, (list, tuple)) else [s2t]
             return_result.append(result)
 
         return return_result
