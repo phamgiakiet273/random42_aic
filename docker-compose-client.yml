@@ -1,0 +1,35 @@
+# Client/local mode: UI + hub locally, heavy services over a tunnel. Frames come
+# off your own disk; only search JSON and the clip you click cross the tunnel.
+#   docker compose -f docker-compose-client.yml --env-file .env.client up -d
+# See docs/LOCAL.md.
+services:
+  hub:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    env_file: .env.client
+    user: "${HOST_UID}:${HOST_GID}"
+    environment:
+      SERVICE: hub
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # reaches tunnels on the host
+    volumes:
+      - ./src:/app/src:ro
+      - ${LOG_HOST_PATH}:/app/logs
+    restart: unless-stopped
+
+  # The single origin the browser talks to: SPA + /img + /hub + /video.
+  web:
+    image: nginx:alpine
+    depends_on: [hub]
+    ports: ["${CLIENT_PORT:-9080}:80"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      VIDEO_UPSTREAM: "${VIDEO_UPSTREAM:-http://host.docker.internal:9028}"
+      RESULT_MANAGER_UPSTREAM: "${RESULT_MANAGER_UPSTREAM:-http://host.docker.internal:9022}"
+    volumes:
+      - ./src/ui/aic/dist:/usr/share/nginx/html:ro
+      - ${DATASET_HOST_PATH}:/data:ro
+      - ./nginx/client.conf:/etc/nginx/templates/default.conf.template:ro
+    restart: unless-stopped

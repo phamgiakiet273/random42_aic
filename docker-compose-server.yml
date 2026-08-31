@@ -6,10 +6,18 @@ x-app: &app
   env_file: .env
   user: "${HOST_UID}:${HOST_GID}"
   volumes:
+    # Source is mounted, not only baked into the image, so a code change needs
+    # `docker compose restart <service>` instead of a rebuild. Read-only.
+    - ./src:/app/src:ro
     - ${DATASET_HOST_PATH}:/app/data:ro
     - ${MODEL_CACHE_HOST_PATH}:/app/model-cache
     - ${LOG_HOST_PATH}:/app/logs
+    # QdrantSearchClient memoises a walk of the keyframe tree here; without a
+    # host mount that cache dies with the container (~90s to rebuild over 9p).
+    - ./.cache/qdrant_prep:/home/appuser/.cache/random42_aic/qdrant_prep
   restart: unless-stopped
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
   logging:
     driver: json-file
     options:
@@ -85,21 +93,29 @@ services:
       qdrant-metaclip:
         condition: service_healthy
 
+  # Matches the engine this index was created and served by. Do NOT downgrade
+  # the image: storage format is written by the engine version, and an older
+  # engine may refuse or corrupt it. Exactly one engine may hold this directory.
   qdrant-siglip-alpha:
-    # v1.14.3 is not published on Docker Hub; keep the server on the closest
-    # available v1.14 release for compatibility with qdrant-client==1.14.3.
-    image: qdrant/qdrant:v1.14.1
-    volumes: ["./data/qdrant_storage/siglip_alpha:/qdrant/storage"]
+    image: qdrant/qdrant:v1.15.5-gpu-nvidia
+    environment:
+      QDRANT__GPU__INDEXING: "1"
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,graphics,utility
+    deploy:
+      resources:
+        reservations:
+          devices: [{driver: nvidia, count: 1, capabilities: [gpu]}]
+    volumes: ["${QDRANT_STORAGE_HOST_PATH}:/qdrant/storage"]
+    ports: ["6333:6333", "6334:6334"]
     restart: unless-stopped
     healthcheck:
-      # The official Qdrant image does not include curl. Bash's TCP socket
-      # support lets us check the documented readiness endpoint without
-      # adding packages to the database image.
+      # The official image has no curl; bash's TCP support hits /readyz.
       test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333 && printf \"GET /readyz HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n\" >&3 && grep -q \"200\" <&3'"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 15s
+      start_period: 20s
 
   qdrant-siglip-beta:
     image: qdrant/qdrant:v1.14.1

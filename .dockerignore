@@ -6,3 +6,11 @@ data
 logs
 __pycache__
 *.pyc
+
+# Frontend build artefacts: the SPA is served by its own Vite dev server (or a
+# static host), never from these Python images. 191MB of node_modules in the
+# build context slows every build down for nothing.
+src/ui/aic/node_modules
+src/ui/aic/dist
+.env.baremetal
+.env.bak-*

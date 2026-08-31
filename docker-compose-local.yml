@@ -11,8 +11,39 @@ services:
     user: "${HOST_UID}:${HOST_GID}"
     environment:
       SERVICE: hub
+    # The hub runs in its own compose project, so it reaches the server services
+    # through the host's published ports (see *_HOST_PUBLIC in .env).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./src:/app/src
       - ${LOG_HOST_PATH}:/app/logs
     ports: ["9021:9021"]
     restart: unless-stopped
+
+  # The SPA dev server. Lives here rather than being run by hand so the whole
+  # user-facing side (hub + UI) comes up with one command. It proxies /hub,
+  # /media/* and /result_manager, so the browser only needs this one port.
+  frontend:
+    image: oven/bun:1
+    depends_on: [hub]
+    working_dir: /app
+    command: sh -c "bun install && bun run dev"
+    environment:
+      # hub is on this compose network; the media server and result manager
+      # belong to the server stack, reached via the host's published ports.
+      VITE_PROXY_HUB: "http://hub:9021"
+      VITE_PROXY_MEDIA: "${VITE_PROXY_MEDIA:-http://host.docker.internal:9027}"
+      VITE_PROXY_RESULT_MANAGER: "${VITE_PROXY_RESULT_MANAGER:-http://host.docker.internal:9022}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./src/ui/aic:/app
+      # Keep node_modules inside the container: the host copy sits on a 9p
+      # mount and is both slow and platform-specific.
+      - aic_node_modules:/app/node_modules
+    ports: ["10000:10000"]
+    restart: unless-stopped
+
+volumes:
+  aic_node_modules:
