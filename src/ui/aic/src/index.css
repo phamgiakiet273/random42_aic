@@ -1,0 +1,13 @@
+@import "tailwindcss";
+@plugin "daisyui";
+
+@keyframes jiggle {
+  0%, 100% { transform: scale(1) rotate(0deg); }
+  25% { transform: scale(1.15, 0.9) rotate(-6deg); }
+  50% { transform: scale(0.95, 1.1) rotate(4deg); }
+  75% { transform: scale(1.1, 0.95) rotate(-3deg); }
+}
+
+.jiggle-btn:hover {
+  animation: jiggle 0.4s ease-in-out;
+}
