@@ -21,7 +21,6 @@ one place.
 from __future__ import annotations
 
 import base64
-import os
 import time
 from http import HTTPStatus
 
@@ -31,7 +30,7 @@ from src.common.schemas.api import APIResponse
 from src.externals.qdrant_client import QdrantSearchClient
 from src.modules.vector_search.fusion import preprocessing_image, preprocessing_text
 from src.utils.logger import get_logger
-from src.utils.metadata import bytes_to_pil_image, get_frame_path, get_video_path
+from src.utils.metadata import bytes_to_pil_image
 from src.utils.settings import get_settings
 
 logger = get_logger()
@@ -146,7 +145,6 @@ class ClipSearchService:
         frame_class_filter: list[int] | None = None,
         skip_frames: list[dict] | None = None,
         return_s2t: bool = True,
-        return_object: bool = True,
     ) -> APIResponse:
         logger.info(
             f"scroll called with k={k}, video_filter={video_filter}, s2t_filter={s2t_filter}, "
@@ -162,7 +160,6 @@ class ClipSearchService:
             frame_class_filter=frame_class_filter,
             skip_frames=skip_frames or [],
             return_s2t=return_s2t,
-            return_object=return_object,
         )
         logger.info("Scroll video retrieval completed")
         result = self._add_paths(result)
@@ -175,7 +172,6 @@ class ClipSearchService:
         video_filter: str | list[str] | None = None,
         s2t_filter: str | None = None,
         return_s2t: bool = True,
-        return_object: bool = True,
         frame_class_filter: list[int] | None = None,
         skip_frames: list[dict] | None = None,
         sort_to_news: bool = True,
@@ -197,7 +193,6 @@ class ClipSearchService:
             skip_frames=skip_frames or [],
             sort_to_news=sort_to_news,
             return_s2t=return_s2t,
-            return_object=return_object,
         )
         logger.info(f"Text search completed with query {text!r}")
         result = self._add_paths(result)
@@ -210,7 +205,6 @@ class ClipSearchService:
         video_filter: str | list[str] | None = None,
         s2t_filter: str | None = None,
         return_s2t: bool = True,
-        return_object: bool = True,
         frame_class_filter: list[int] | None = None,
         skip_frames: list[dict] | None = None,
         sort_to_news: bool = True,
@@ -234,7 +228,6 @@ class ClipSearchService:
             skip_frames=skip_frames or [],
             sort_to_news=sort_to_news,
             return_s2t=return_s2t,
-            return_object=return_object,
         )
         logger.info("Image search completed")
         result = self._add_paths(result)
@@ -248,7 +241,6 @@ class ClipSearchService:
         video_filter: list[str] | str | None = None,
         s2t_filter: str | None = None,
         return_s2t: bool = True,
-        return_object: bool = True,
         frame_class_filter: list[int] | None = None,
         skip_frames: list[dict] | None = None,
     ) -> APIResponse:
@@ -283,7 +275,6 @@ class ClipSearchService:
             frame_class_filter=frame_class_filter,
             skip_frames=skip_frames or [],
             return_s2t=return_s2t,
-            return_object=return_object,
         )
         logger.info(f"Temporal search completed with query {segments}")
         result = self._add_paths_nested(result)
@@ -292,26 +283,14 @@ class ClipSearchService:
     # ---- response post-processing ----
 
     def _add_paths(self, records: list[dict]) -> list[dict]:
-        """Attach a display `index` plus dataset-relative `video_path`/`frame_path`
-        to each flat result record (mutates and returns `records`)."""
-        settings = self._settings
+        """Attach each record's display rank (mutates and returns `records`).
+
+        Doc comment [p]: `video_path`/`frame_path` are no longer shipped -- the
+        client builds URLs from `GET /hub/media_config`. `index` is the final
+        rank, so clients never re-sort (doc comment [o]).
+        """
         for idx, record in enumerate(records):
             record["index"] = idx
-            batch = int(record["idx_folder"])
-
-            video_path = get_video_path(batch=batch, video_name=record["video_name"])
-            record["video_path"] = os.path.relpath(
-                video_path, settings.dataset_path_origin
-            )
-
-            frame_path = get_frame_path(
-                batch=batch,
-                video_name=record["video_name"],
-                frame_name=record["keyframe_id"],
-            )
-            record["frame_path"] = os.path.relpath(
-                frame_path, settings.dataset_path_team
-            )
         return records
 
     def _add_paths_nested(self, chains: list[list[dict]]) -> list[list[dict]]:

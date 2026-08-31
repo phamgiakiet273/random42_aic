@@ -13,7 +13,6 @@ class QdrantRequest(BaseModel):
     time_in: str | None = None
     time_out: str | None = None
     return_s2t: bool = True
-    return_object: bool = True
     frame_class_filter: list[int] | None = None
     skip_frames: list[dict[str, str]] = Field(default_factory=list)
     sort_to_news: bool = True
@@ -27,7 +26,6 @@ class RetrievalRequest(BaseModel):
     video_filter: str | list[str] | None = None
     s2t_filter: str | None = None
     return_s2t: bool = True
-    return_object: bool = True
     frame_class_filter: list[int] | None = None
     skip_frames: list[dict[str, str]] = Field(default_factory=list)
     sort_to_news: bool = True

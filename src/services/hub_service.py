@@ -51,6 +51,7 @@ from PIL import Image
 from src.common.schemas.api import APIResponse
 from src.common.schemas.hub import SearchModelConfig, SearchRequest
 from src.common.schemas.rerank import VideoMetadata
+from src.utils.dataset_layout import media_config, video_stem
 from src.utils.logger import get_logger
 from src.utils.settings import get_settings
 
@@ -91,12 +92,68 @@ class HubGatewayService:
         return target
 
     def build_image_original_redirect_target(self, full_path: str) -> str:
+        """Original-resolution variant of `build_image_redirect_target`.
+
+        Doc comment [s]: the old `.avif` -> `.jpg` rewrite pointed at files that
+        do not exist (there is no full-res frame tree). Point SPLIT_NAME at one
+        if it ever appears.
+        """
         settings = self._settings
         full_path = full_path.replace(settings.split_name_low_res, settings.split_name)
-        full_path = full_path.replace(".avif", ".jpg")
         target = f"{settings.nginx_image_host}/{full_path}"
         logger.info(f"send_img_original redirect target: {target}")
         return target
+
+    # ---- media layout published to the frontend ----
+
+    def media_config(self) -> APIResponse:
+        """Doc comments [p]/[t]: the frontend builds media URLs from this rule
+        rather than each search record carrying long absolute paths."""
+        return APIResponse(
+            status=HTTPStatus.OK.value,
+            message="Success",
+            data=media_config(),
+        )
+
+    # ---- result export ----
+
+    async def download_results(
+        self, request: SearchRequest, export_format: str = "kis", limit: int = 100
+    ) -> tuple[str, str]:
+        """Doc comment [l]: search results as submission-format CSV.
+
+        Stateless -- re-runs `request` rather than caching a "current query",
+        since the hub runs multiple workers. Returns `(csv_text, filename)`.
+        """
+        export_format = (export_format or "kis").lower()
+        if export_format not in ("kis", "trake"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown format {export_format!r}, expected 'kis' or 'trake'",
+            )
+
+        response = await self.search(request)
+        records = response.data or []
+
+        # Temporal search returns a list of chains; flatten to its main events.
+        if records and isinstance(records[0], list):
+            records = [frame for chain in records for frame in chain]
+
+        rows: list[str] = []
+        if export_format == "kis":
+            for record in records[: max(limit, 0)]:
+                video = video_stem(record.get("video_name", ""))
+                rows.append(f"{video},{record.get('keyframe_id', '')}")
+        else:
+            grouped: dict[str, list[str]] = {}
+            for record in records[: max(limit, 0)]:
+                video = video_stem(record.get("video_name", ""))
+                grouped.setdefault(video, []).append(str(record.get("keyframe_id", "")))
+            rows = [
+                ",".join([video, *frames]) for video, frames in grouped.items()
+            ]
+
+        return "\n".join(rows) + ("\n" if rows else ""), f"result_{export_format}.csv"
 
     def build_video_redirect_target(self, full_path: str) -> str:
         target = f"{self._settings.nginx_video_host}/{full_path}"
@@ -344,7 +401,6 @@ class HubGatewayService:
             "video_filter": request.video_filter,
             "s2t_filter": request.s2t_filter,
             "return_s2t": request.return_s2t,
-            "return_object": request.return_object,
             "frame_class_filter": request.frame_class_filter,
             "skip_frames": request.skip_frames,
             "sort_to_news": request.sort_to_news,
@@ -370,7 +426,6 @@ class HubGatewayService:
             time_in=request.time_in,
             time_out=request.time_out,
             return_s2t=request.return_s2t,
-            return_object=request.return_object,
             frame_class_filter=request.frame_class_filter,
             skip_frames=request.skip_frames,
             sort_to_news=request.sort_to_news,
@@ -385,7 +440,6 @@ class HubGatewayService:
         video_filter: str | None = None,
         s2t_filter: str | None = None,
         return_s2t: bool = True,
-        return_object: bool = True,
         frame_class_filter: list[int] | None = None,
         skip_frames: list[dict] | None = None,
         sort_to_news: bool = True,
@@ -397,7 +451,6 @@ class HubGatewayService:
             "video_filter": video_filter,
             "s2t_filter": s2t_filter,
             "return_s2t": return_s2t,
-            "return_object": return_object,
             "frame_class_filter": frame_class_filter or [],
             "skip_frames": skip_frames or [],
             "sort_to_news": sort_to_news,
@@ -417,7 +470,6 @@ class HubGatewayService:
         video_filter: str | None = None,
         s2t_filter: str | None = None,
         return_s2t: bool = True,
-        return_object: bool = True,
         frame_class_filter: list[int] | None = None,
         skip_frames: list[dict] | None = None,
         sort_to_news: bool = True,
@@ -430,7 +482,6 @@ class HubGatewayService:
             "video_filter": video_filter,
             "s2t_filter": s2t_filter,
             "return_s2t": return_s2t,
-            "return_object": return_object,
             "frame_class_filter": frame_class_filter or [],
             "skip_frames": skip_frames or [],
             "sort_to_news": sort_to_news,
@@ -450,7 +501,6 @@ class HubGatewayService:
         video_filter: str | None = None,
         s2t_filter: str | None = None,
         return_s2t: bool = True,
-        return_object: bool = True,
         frame_class_filter: list[int] | None = None,
         skip_frames: list[dict] | None = None,
         sort_to_news: bool = True,
@@ -488,7 +538,6 @@ class HubGatewayService:
             video_filter=video_filter,
             s2t_filter=s2t_filter,
             return_s2t=return_s2t,
-            return_object=return_object,
             frame_class_filter=frame_class_filter,
             skip_frames=skip_frames,
             sort_to_news=sort_to_news,
@@ -502,7 +551,6 @@ class HubGatewayService:
         video_filter: str | None = None,
         s2t_filter: str | None = None,
         return_s2t: bool = True,
-        return_object: bool = True,
         frame_class_filter: list[int] | None = None,
         skip_frames: list[dict] | None = None,
         sort_to_news: bool = True,
@@ -515,7 +563,6 @@ class HubGatewayService:
             "video_filter": video_filter,
             "s2t_filter": s2t_filter,
             "return_s2t": return_s2t,
-            "return_object": return_object,
             "frame_class_filter": frame_class_filter or [],
             "skip_frames": skip_frames or [],
             "sort_to_news": sort_to_news,
@@ -537,7 +584,6 @@ class HubGatewayService:
         time_in: str | None = None,
         time_out: str | None = None,
         return_s2t: bool = True,
-        return_object: bool = True,
         frame_class_filter: list[int] | None = None,
         skip_frames: list[dict] | None = None,
         sort_to_news: bool = True,
@@ -551,7 +597,6 @@ class HubGatewayService:
             "time_in": time_in,
             "time_out": time_out,
             "return_s2t": return_s2t,
-            "return_object": return_object,
             "frame_class_filter": frame_class_filter or [],
             "skip_frames": skip_frames or [],
             "sort_to_news": sort_to_news,

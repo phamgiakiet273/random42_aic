@@ -90,7 +90,6 @@ def build_router(service: ClipSearchService, prefix: str) -> APIRouter:
             frame_class_filter=req.frame_class_filter,
             skip_frames=req.skip_frames,
             return_s2t=req.return_s2t,
-            return_object=req.return_object,
         )
 
     @router.post("/text_search")
@@ -101,7 +100,6 @@ def build_router(service: ClipSearchService, prefix: str) -> APIRouter:
             video_filter=req.video_filter,
             s2t_filter=req.s2t_filter,
             return_s2t=req.return_s2t,
-            return_object=req.return_object,
             frame_class_filter=req.frame_class_filter,
             skip_frames=req.skip_frames,
             sort_to_news=req.sort_to_news,
@@ -115,7 +113,6 @@ def build_router(service: ClipSearchService, prefix: str) -> APIRouter:
             video_filter=req.video_filter,
             s2t_filter=req.s2t_filter,
             return_s2t=req.return_s2t,
-            return_object=req.return_object,
             frame_class_filter=req.frame_class_filter,
             skip_frames=req.skip_frames,
             sort_to_news=req.sort_to_news,
@@ -130,7 +127,6 @@ def build_router(service: ClipSearchService, prefix: str) -> APIRouter:
             video_filter=req.video_filter,
             s2t_filter=req.s2t_filter,
             return_s2t=req.return_s2t,
-            return_object=req.return_object,
             frame_class_filter=req.frame_class_filter,
             skip_frames=req.skip_frames,
         )

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import ujson
 from fastapi import APIRouter, Form, HTTPException
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse
 from pydantic import ValidationError
 
 from src.common.schemas.api import APIResponse
@@ -35,7 +35,6 @@ def _register_clip_variant_routes(
         video_filter: str | None = Form(None),
         s2t_filter: str | None = Form(None),
         return_s2t: bool = Form(True),
-        return_object: bool = Form(True),
         frame_class_filter: str = Form("[]"),
         skip_frames: str = Form("[]"),
         sort_to_news: bool = Form(True),
@@ -47,7 +46,6 @@ def _register_clip_variant_routes(
             video_filter=video_filter,
             s2t_filter=s2t_filter,
             return_s2t=return_s2t,
-            return_object=return_object,
             frame_class_filter=ujson.loads(frame_class_filter),
             skip_frames=ujson.loads(skip_frames),
             sort_to_news=sort_to_news,
@@ -59,7 +57,6 @@ def _register_clip_variant_routes(
         video_filter: str | None = Form(None),
         s2t_filter: str | None = Form(None),
         return_s2t: bool = Form(True),
-        return_object: bool = Form(True),
         frame_class_filter: str = Form("[]"),
         skip_frames: str = Form("[]"),
         sort_to_news: bool = Form(True),
@@ -71,7 +68,6 @@ def _register_clip_variant_routes(
             video_filter=video_filter,
             s2t_filter=s2t_filter,
             return_s2t=return_s2t,
-            return_object=return_object,
             frame_class_filter=ujson.loads(frame_class_filter),
             skip_frames=ujson.loads(skip_frames),
             sort_to_news=sort_to_news,
@@ -83,7 +79,6 @@ def _register_clip_variant_routes(
         video_filter: str | None = Form(None),
         s2t_filter: str | None = Form(None),
         return_s2t: bool = Form(True),
-        return_object: bool = Form(True),
         frame_class_filter: str = Form("[]"),
         skip_frames: str = Form("[]"),
         sort_to_news: bool = Form(True),
@@ -96,7 +91,6 @@ def _register_clip_variant_routes(
             video_filter=video_filter,
             s2t_filter=s2t_filter,
             return_s2t=return_s2t,
-            return_object=return_object,
             frame_class_filter=ujson.loads(frame_class_filter),
             skip_frames=ujson.loads(skip_frames),
             sort_to_news=sort_to_news,
@@ -110,7 +104,6 @@ def _register_clip_variant_routes(
         time_in: str | None = Form(None),
         time_out: str | None = Form(None),
         return_s2t: bool = Form(True),
-        return_object: bool = Form(True),
         frame_class_filter: str = Form("[]"),
         skip_frames: str = Form("[]"),
         sort_to_news: bool = Form(True),
@@ -124,7 +117,6 @@ def _register_clip_variant_routes(
             time_in=time_in,
             time_out=time_out,
             return_s2t=return_s2t,
-            return_object=return_object,
             frame_class_filter=ujson.loads(frame_class_filter),
             skip_frames=ujson.loads(skip_frames),
             sort_to_news=sort_to_news,
@@ -154,7 +146,6 @@ def build_router(service: HubGatewayService) -> APIRouter:
         time_in: str | None = Form(None),
         time_out: str | None = Form(None),
         return_s2t: bool = Form(True),
-        return_object: bool = Form(True),
         frame_class_filter: str = Form("[]"),
         skip_frames: str = Form("[]"),
         sort_to_news: bool = Form(True),
@@ -173,7 +164,6 @@ def build_router(service: HubGatewayService) -> APIRouter:
                 time_in=time_in,
                 time_out=time_out,
                 return_s2t=return_s2t,
-                return_object=return_object,
                 frame_class_filter=ujson.loads(frame_class_filter),
                 skip_frames=ujson.loads(skip_frames),
                 sort_to_news=sort_to_news,
@@ -183,6 +173,67 @@ def build_router(service: HubGatewayService) -> APIRouter:
         except (TypeError, ValueError, ValidationError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return await service.search(request)
+
+    @router.post("/download")
+    async def download(
+        model: str = Form(...),
+        search_type: str = Form(...),
+        format: str = Form("kis"),
+        limit: int = Form(100),
+        text: str | None = Form(None),
+        image_path: str | None = Form(None),
+        k: int = Form(100),
+        video_filter: str | None = Form(None),
+        s2t_filter: str | None = Form(None),
+        time_in: str | None = Form(None),
+        time_out: str | None = Form(None),
+        return_s2t: bool = Form(False),
+        frame_class_filter: str = Form("[]"),
+        skip_frames: str = Form("[]"),
+        sort_to_news: bool = Form(True),
+        main_event_index: int = Form(0),
+        utility_feature: str = Form("shot"),
+    ):
+        """Doc comment [l]: current search results as a submission-format CSV.
+
+        Takes the same fields as `/search` rather than a query id -- the hub
+        runs multiple workers, so there is no shared "current query" to refer to.
+        """
+        try:
+            request = SearchRequest(
+                model=model,
+                search_type=search_type,
+                text=text,
+                image_path=image_path,
+                k=k,
+                video_filter=video_filter,
+                s2t_filter=s2t_filter,
+                time_in=time_in,
+                time_out=time_out,
+                return_s2t=return_s2t,
+                frame_class_filter=ujson.loads(frame_class_filter),
+                skip_frames=ujson.loads(skip_frames),
+                sort_to_news=sort_to_news,
+                main_event_index=main_event_index,
+                utility_feature=utility_feature,
+            )
+        except (TypeError, ValueError, ValidationError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        csv_text, filename = await service.download_results(
+            request, export_format=format, limit=limit
+        )
+        return PlainTextResponse(
+            content=csv_text,
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    @router.get("/media_config")
+    async def media_config() -> APIResponse:
+        """Doc comments [p]/[t]: the dataset layout rule the UI needs to build
+        image/video URLs itself, now that records no longer carry full paths."""
+        return service.media_config()
 
     @router.get("/ping")
     async def ping() -> APIResponse:

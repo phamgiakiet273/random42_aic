@@ -119,7 +119,6 @@ class UtilService:
             time_out=frame_name,
             feature="shot",
             return_s2t=False,
-            return_object=False,
         )
         if not anchor_matches:
             # Same caveat the legacy comment called out: this only works if the
@@ -136,7 +135,6 @@ class UtilService:
             time_out=anchor["related_end_frame"],
             feature="shot",
             return_s2t=False,
-            return_object=False,
         )
 
         frame_paths = [
