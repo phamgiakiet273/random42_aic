@@ -1,221 +1,195 @@
-import { useState, useRef } from 'react'
-import Papa from 'papaparse'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { toResultCsv, downloadCsvFile } from '../utils/csv'
-import { COLORS, placeholderThumbnail } from '../utils/placeholder'
-import { buildThumbnailUrl } from '../utils/media'
-import ResultCard from '../components/ResultCard'
+import { useQuery } from '@tanstack/react-query'
+import { useResultStore } from '../resultManager/store'
+import {
+  rowsFromCsv, rowSummary, buildSubmissionCsv, MAX_ROWS, frameBase,
+} from '../resultManager/csv'
+import ManagedRowCard from '../resultManager/ManagedRowCard'
+import {
+  ModeBar, UploadPanel, ManualEntryPanel, RangePanel, VqaPanel, MarksPanel,
+} from '../resultManager/Panels'
+import { downloadCsvFile } from '../utils/csv'
+import { resultFrameUrl, resultVideoUrl, getFps } from '../api/resultManager'
 import FrameDetailModal from '../components/FrameDetailModal'
 
+function Section({ title, children }) {
+  return (
+    <div className="collapse collapse-arrow bg-base-100 shadow-sm">
+      <input type="checkbox" defaultChecked />
+      <div className="collapse-title text-sm font-medium py-2 min-h-0">{title}</div>
+      <div className="collapse-content">{children}</div>
+    </div>
+  )
+}
+
 export default function ResultManagerPage() {
-  const [rows, setRows] = useState([])
-  const [selected, setSelected] = useState(new Set())
-  const [draggingIndex, setDraggingIndex] = useState(null)
-  const [overIndex, setOverIndex] = useState(null)
+  const store = useResultStore()
+  const { rows, mode, selected, thumbnailSize, filename } = store
   const [previewIndex, setPreviewIndex] = useState(null)
-  const [rangeFrom, setRangeFrom] = useState('')
-  const [rangeTo, setRangeTo] = useState('')
-  const [filename, setFilename] = useState('query-p1-1-kis')
-  const dragIndex = useRef(null)
+  const [dragging, setDragging] = useState(null)
+  const [dragOver, setDragOver] = useState(null)
+  const [notice, setNotice] = useState(null)
+  const fileRef = useRef(null)
 
-  const handleFileUpload = (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      const parsed = Papa.parse(reader.result, { skipEmptyLines: true })
-      const newRows = parsed.data.map(([video_id, keyframe_id], i) => ({
-        id: i,
-        video_id,
-        keyframe_id,
-      }))
-      setRows(newRows)
-      setSelected(new Set())
-    }
-    reader.readAsText(file)
-    e.target.value = ''
-  }
-
-  const toggleSelected = (id) => {
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
-  const handleDeleteSelected = () => {
-    setRows((prev) => prev.filter((r) => !selected.has(r.id)))
-    setSelected(new Set())
-  }
-
-  const handleSelectAll = () => {
-    setSelected(new Set(rows.map((r) => r.id)))
-  }
-
-  const handleClearSelection = () => setSelected(new Set())
-
-  const handleSelectRange = () => {
-    const from = parseInt(rangeFrom, 10)
-    const to = parseInt(rangeTo, 10)
-    if (Number.isNaN(from) || Number.isNaN(to)) return
-    const lo = Math.max(1, Math.min(from, to))
-    const hi = Math.min(rows.length, Math.max(from, to))
-    setSelected((prev) => {
-      const next = new Set(prev)
-      rows.slice(lo - 1, hi).forEach((r) => next.add(r.id))
-      return next
-    })
-  }
-
-  const handleDragStart = (index) => {
-    dragIndex.current = index
-    setDraggingIndex(index)
-  }
-
-  const handleDragOver = (index) => {
-    if (index !== dragIndex.current) setOverIndex(index)
-  }
-
-  const handleDrop = (index) => {
-    setRows((prev) => {
-      const next = [...prev]
-      const [moved] = next.splice(dragIndex.current, 1)
-      next.splice(index, 0, moved)
-      return next
-    })
-    dragIndex.current = null
-    setDraggingIndex(null)
-    setOverIndex(null)
-  }
-
-  const handleDragEnd = () => {
-    dragIndex.current = null
-    setDraggingIndex(null)
-    setOverIndex(null)
-  }
-
-  const handleDownload = () => {
-    const name = `${filename.trim() || 'adjusted_result'}.csv`
-    downloadCsvFile(name, toResultCsv(rows))
-  }
-
+  const summary = rowSummary(rows, mode)
   const previewRow = previewIndex != null ? rows[previewIndex] : null
-  const previewVideo = previewRow && {
-    id: previewRow.id,
-    video_id: previewRow.video_id || 'Unknown Video',
-    title: previewRow.video_id || 'Invalid Keyframe',
-    keyframe_id: previewRow.keyframe_id,
-    timestamp: '',
-    thumbnail_url:
-      buildThumbnailUrl(previewRow.video_id, previewRow.keyframe_id) ||
-      placeholderThumbnail(previewRow.video_id || 'Unknown Video', COLORS[previewIndex % COLORS.length]),
+
+  const { data: previewFps } = useQuery({
+    queryKey: ['fps', previewRow?.video_name],
+    queryFn: () => getFps(previewRow.video_name),
+    enabled: Boolean(previewRow?.video_name),
+    retry: false,
+  })
+
+  // "M" marks the frame currently showing in the preview video.
+  useEffect(() => {
+    if (!previewRow) return
+    const onKey = (e) => {
+      if (e.key.toLowerCase() !== 'm') return
+      const video = document.querySelector('dialog[open] video')
+      if (!video) return
+      const fps = previewFps || 25
+      store.addMark(previewRow.video_name, Math.round(video.currentTime * fps))
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [previewRow, previewFps, store])
+
+  async function handleUpload(file, insertIndex) {
+    const text = await file.text()
+    const { rows: parsed, detected } = rowsFromCsv(text, mode)
+    if (!parsed.length) {
+      setNotice({ err: true, text: 'No usable rows. Expected "<video_name>,<frame_idx>" with no header row.' })
+      return
+    }
+    if (detected && detected !== mode) store.setMode(detected)
+    store.insertRows(parsed, insertIndex)
+    // Carry the uploaded name over to the download field, minus its extension
+    // and any existing mode suffix (the suffix is re-applied on export).
+    store.update({
+      filename: file.name.replace(/\.csv$/i, '').replace(/-(kis|qa|trake)$/i, ''),
+    })
+    setNotice({ err: false, text: `Loaded ${parsed.length} rows${detected ? ` (detected ${detected.toUpperCase()})` : ''}.` })
+  }
+
+  function handleDownload() {
+    if (!rows.length) return setNotice({ err: true, text: 'No rows to download.' })
+    let out = rows
+    if (rows.length > MAX_ROWS) {
+      if (!window.confirm(`A submission CSV may hold at most ${MAX_ROWS} rows; this has ${rows.length}.\n\nExport only the first ${MAX_ROWS}?`)) return
+      out = rows.slice(0, MAX_ROWS)
+    }
+    const { csv, problems } = buildSubmissionCsv(out, mode)
+    if (problems.length) {
+      const shown = problems.slice(0, 10).join('\n')
+      const more = problems.length > 10 ? `\n...and ${problems.length - 10} more` : ''
+      if (!window.confirm(`Found ${problems.length} issue(s):\n\n${shown}${more}\n\nDownload anyway?`)) return
+    }
+    const stem = (filename || 'query-1').replace(/\.csv$/i, '').replace(/-(kis|qa|trake)$/i, '')
+    downloadCsvFile(`${stem}-${mode}.csv`, csv)
   }
 
   return (
-    <main className="p-4 flex flex-col gap-4">
-      <Link to="/" className="link link-hover text-sm">
-        ← Back
-      </Link>
-      <h1 className="text-xl font-semibold">Result Manager</h1>
+    <main className="p-4 flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <Link to="/" className="link link-hover text-sm">← Back to search</Link>
+        <h1 className="text-xl font-semibold">Result Manager</h1>
+      </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <input
-          type="file"
-          accept=".csv"
-          onChange={handleFileUpload}
-          className="file-input file-input-sm"
-        />
-        <div className="flex items-center gap-1 ml-auto">
-          <input
-            type="text"
-            placeholder="adjusted_result"
-            value={filename}
-            onChange={(e) => setFilename(e.target.value)}
-            className="input input-sm w-40"
-          />
-          <span className="text-xs text-base-content/60">.csv</span>
-          <button
-            type="button"
-            className="btn btn-sm btn-primary"
-            disabled={rows.length === 0}
-            onClick={handleDownload}
-          >
-            Download Result
-          </button>
+      <ModeBar />
+
+      <div className="grid gap-3 lg:grid-cols-[22rem_1fr] items-start">
+        <div className="flex flex-col gap-2">
+          <Section title="Load CSV"><UploadPanel onUpload={handleUpload} /></Section>
+          <Section title="Add rows manually"><ManualEntryPanel /></Section>
+          <Section title="Add a frame range"><RangePanel /></Section>
+          {mode === 'qa' && <Section title="Bulk answers"><VqaPanel /></Section>}
+          {mode === 'trake' && <Section title="Marked frames"><MarksPanel /></Section>}
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`text-sm ${summary.warn ? 'text-warning font-medium' : 'text-base-content/60'}`}>
+              {summary.text}
+            </span>
+            <span className="flex-1" />
+            <span className="text-xs text-base-content/50">{selected.size} selected</span>
+            <button type="button" className="btn btn-xs" onClick={store.selectAll}>Select all</button>
+            <button type="button" className="btn btn-xs" disabled={!selected.size}
+              onClick={store.clearSelection}>Deselect</button>
+            <button type="button" className="btn btn-xs btn-error" disabled={!selected.size}
+              onClick={store.deleteSelected}>Delete selected</button>
+          </div>
+
+          <div className="flex items-center gap-3 flex-wrap">
+            <label className="flex items-center gap-2 text-xs">
+              Thumbnail
+              <input type="range" min={100} max={320} step={20} className="range range-xs w-32"
+                value={thumbnailSize}
+                onChange={(e) => store.update({ thumbnailSize: Number(e.target.value) })} />
+            </label>
+            <span className="flex-1" />
+            <input ref={fileRef} className="input input-sm input-bordered w-44"
+              value={filename} onChange={(e) => store.update({ filename: e.target.value })} />
+            <span className="text-xs text-base-content/50">-{mode}.csv</span>
+            <button type="button" className="btn btn-sm btn-primary" onClick={handleDownload}>
+              Download submission CSV
+            </button>
+          </div>
+
+          {notice && (
+            <div className={`alert py-2 text-sm ${notice.err ? 'alert-error' : 'alert-success'}`}>
+              {notice.text}
+            </div>
+          )}
+
+          {rows.length === 0 ? (
+            <div className="hero bg-base-100 rounded-lg py-16">
+              <div className="hero-content text-center text-base-content/60">
+                <div>
+                  <p className="text-lg font-medium">No rows yet</p>
+                  <p className="text-sm">Upload a submission CSV, or add rows manually.</p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-3">
+              {rows.map((row, i) => (
+                <ManagedRowCard
+                  key={row.id} row={row} index={i} mode={mode} size={thumbnailSize}
+                  selected={selected.has(i)}
+                  onToggle={store.toggleSelected}
+                  onPreview={setPreviewIndex}
+                  onAnswer={(idx, answer) => store.updateRow(idx, { answer })}
+                  onDragStart={setDragging}
+                  onDragOver={setDragOver}
+                  onDrop={(to) => { if (dragging != null && dragging !== to) store.moveRow(dragging, to) }}
+                  onDragEnd={() => { setDragging(null); setDragOver(null) }}
+                  isDragging={dragging === i}
+                  isDragOver={dragOver === i && dragging !== i}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-base-content/60 w-24">{selected.size} selected</span>
-        <button type="button" className="btn btn-xs" disabled={rows.length === 0} onClick={handleSelectAll}>
-          Select All
-        </button>
-        <button
-          type="button"
-          className="btn btn-xs"
-          disabled={selected.size === 0}
-          onClick={handleClearSelection}
-        >
-          Clear
-        </button>
-        <button
-          type="button"
-          className="btn btn-xs btn-error"
-          disabled={selected.size === 0}
-          onClick={handleDeleteSelected}
-        >
-          Delete Selected
-        </button>
-        <div className="flex items-center gap-1">
-          <input
-            type="number"
-            min={1}
-            placeholder="From"
-            value={rangeFrom}
-            onChange={(e) => setRangeFrom(e.target.value)}
-            className="input input-xs w-16"
-          />
-          <span className="text-xs text-base-content/60">-</span>
-          <input
-            type="number"
-            min={1}
-            placeholder="To"
-            value={rangeTo}
-            onChange={(e) => setRangeTo(e.target.value)}
-            className="input input-xs w-16"
-          />
-          <button type="button" className="btn btn-xs" onClick={handleSelectRange}>
-            Select Range
-          </button>
-        </div>
-      </div>
-
-      {rows.length === 0 ? (
-        <p className="text-sm text-base-content/60">Upload a CSV to get started.</p>
-      ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-          {rows.map((row, index) => (
-            <ResultCard
-              key={row.id}
-              row={row}
-              index={index}
-              selected={selected.has(row.id)}
-              onToggleSelected={toggleSelected}
-              onDragStart={handleDragStart}
-              onDragOver={handleDragOver}
-              onDrop={handleDrop}
-              onDragEnd={handleDragEnd}
-              isDragging={draggingIndex === index}
-              isDragOver={overIndex === index}
-              onClick={() => setPreviewIndex(index)}
-            />
-          ))}
-        </div>
-      )}
-
-      <FrameDetailModal video={previewVideo} onClose={() => setPreviewIndex(null)} />
+      <FrameDetailModal
+        record={previewRow && {
+          video_name: previewRow.video_name,
+          keyframe_id: frameBase(previewRow.frame_ids[0] || ''),
+          fps: previewFps ?? null,
+          score: 0,
+          related_start_frame: frameBase(previewRow.frame_ids[0] || ''),
+          related_end_frame: frameBase(previewRow.frame_ids.at(-1) || ''),
+        }}
+        urls={previewRow && {
+          frame: resultFrameUrl(previewRow.video_name, previewRow.frame_ids[0]),
+          video: resultVideoUrl(previewRow.video_name),
+        }}
+        onClose={() => setPreviewIndex(null)}
+      />
     </main>
   )
 }
