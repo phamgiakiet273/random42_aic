@@ -1,9 +1,11 @@
 import { create } from 'zustand'
 
 const DEFAULTS = {
-  returnS2t: false,
-  returnObject: false,
-  frameClassFilter: [0, 1],
+  returnS2t: true,
+  // `returnObject` is gone: doc comment [k]. The field was empty on all
+  // 872,631 indexed points, so the backend no longer returns or accepts it.
+  frameClassFilter: [],
+  sortToNews: true,
   autoTranslate: false,
   immediateRerun: false,
   topK: 100,
@@ -11,6 +13,8 @@ const DEFAULTS = {
   neighborFrameCount: 10,
   thumbnailSize: 220,
   downloadLimit: 100,
+  // Server-rendered CSV (GET /hub/download) vs building it in the browser.
+  serverSideExport: true,
 }
 
 export const useSettingsStore = create((set) => ({

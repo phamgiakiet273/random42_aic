@@ -3,7 +3,8 @@ import { create } from 'zustand'
 const DEFAULTS = {
   videoSearch: '',
   selectedVideos: [],
-  batches: [0, 1],
+  // Batch 0 only by default, matching the legacy default.
+  batches: [0],
   excludedFrames: [],
   s2tFilter: '',
   timeIn: '',

@@ -35,16 +35,6 @@ export default function SettingsPanel() {
               <span className="label-text">S2T Info</span>
             </label>
 
-            <label className="label cursor-pointer justify-start gap-2">
-              <input
-                type="checkbox"
-                className="checkbox checkbox-sm"
-                checked={settings.returnObject}
-                onChange={(e) => settings.update({ returnObject: e.target.checked })}
-              />
-              <span className="label-text">Objects Info</span>
-            </label>
-
             <div>
               <p className="text-xs uppercase tracking-wide text-base-content/60 mb-1">
                 Frame Class Filter
@@ -68,10 +58,30 @@ export default function SettingsPanel() {
               <input
                 type="checkbox"
                 className="checkbox checkbox-sm"
+                checked={settings.sortToNews}
+                onChange={(e) => settings.update({ sortToNews: e.target.checked })}
+              />
+              <span className="label-text">News-style grouping</span>
+            </label>
+
+            <label className="label cursor-pointer justify-start gap-2">
+              <input
+                type="checkbox"
+                className="checkbox checkbox-sm"
+                checked={settings.serverSideExport}
+                onChange={(e) => settings.update({ serverSideExport: e.target.checked })}
+              />
+              <span className="label-text">Export CSV from server</span>
+            </label>
+
+            <label className="label cursor-pointer justify-start gap-2">
+              <input
+                type="checkbox"
+                className="checkbox checkbox-sm"
                 checked={settings.autoTranslate}
                 onChange={(e) => settings.update({ autoTranslate: e.target.checked })}
               />
-              <span className="label-text">Auto Translate</span>
+              <span className="label-text">Auto Translate <span className="badge badge-ghost badge-xs">TODO</span></span>
             </label>
 
             <label className="label cursor-pointer justify-start gap-2">

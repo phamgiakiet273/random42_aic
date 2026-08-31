@@ -1,15 +1,32 @@
 import { create } from 'zustand'
-export function frameKey(record) {
-  return `${record.video_id}:${record.frame_name ?? record.keyframe_id ?? record.id}`
-}
+import { recordKey, toSkipFrame } from './searchStore'
 
-export const useExcludedFramesStore = create((set) => ({
+// Kept as the module's public name — components import { frameKey }.
+export const frameKey = recordKey
+
+export const useExcludedFramesStore = create((set, get) => ({
   excluded: new Set(),
+  // Full records, so a skip can be sent to the backend and shown in the panel.
+  records: [],
+
   exclude: (record) =>
     set((state) => {
+      const key = frameKey(record)
+      if (state.excluded.has(key)) return state
       const next = new Set(state.excluded)
-      next.add(frameKey(record))
-      return { excluded: next }
+      next.add(key)
+      return { excluded: next, records: [...state.records, record] }
     }),
-  clear: () => set({ excluded: new Set() }),
+
+  remove: (key) =>
+    set((state) => {
+      const next = new Set(state.excluded)
+      next.delete(key)
+      return { excluded: next, records: state.records.filter((r) => frameKey(r) !== key) }
+    }),
+
+  /** skip_frames payload for the hub. */
+  skipFrames: () => get().records.map(toSkipFrame),
+
+  clear: () => set({ excluded: new Set(), records: [] }),
 }))
