@@ -19,19 +19,27 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import uvicorn
-from fastapi import FastAPI
-from fastapi.middleware.gzip import GZipMiddleware
+# Load .env into os.environ before transformers/torch import: pydantic-settings
+# never exports it, so HF_HOME/HF_HUB_CACHE would not reach huggingface_hub,
+# which resolves its cache at import time.
+from dotenv import load_dotenv
 
-from src.apis.base import create_app
-from src.utils.logger import get_logger, setup_logger
-from src.utils.settings import Settings, get_settings
+load_dotenv()
+
+import uvicorn  # noqa: E402
+from fastapi import FastAPI  # noqa: E402
+from fastapi.middleware.gzip import GZipMiddleware  # noqa: E402
+
+from src.apis.base import create_app  # noqa: E402
+from src.utils.logger import get_logger, setup_logger  # noqa: E402
+from src.utils.settings import Settings, get_settings  # noqa: E402
 
 _KNOWN_SERVICES = (
     "hub",
     "siglip_alpha",
     "siglip_beta",
     "metaclip",
+    "fusion_model",
     "rerank",
     "submission",
     "util",
@@ -225,12 +233,71 @@ def build_app(service_name: str, settings: Settings) -> FastAPI:
             settings.metaclip_qdrant_port,
             settings.metaclip_qdrant_grpc_port,
         )
+    elif service_name == "fusion_model":
+        app = _build_fusion_model_app(settings)
     else:
         raise ValueError(
             f"Unknown SERVICE {service_name!r}, expected one of {_KNOWN_SERVICES}"
         )
 
     return _maybe_gzip(app)
+
+
+def _build_fusion_model_app(settings: Settings) -> FastAPI:
+    """Expert fusion (SigLIP2 + jina-clip-v2 + gating), off by default.
+
+    Refuses to start unless FUSION_MODEL_ENABLED is set, because expert B needs
+    a Qdrant collection of jina-clip-v2 embeddings that does not exist on this
+    deployment -- starting without it would silently degrade to SigLIP2-alone
+    while presenting itself as a fusion backend.
+    """
+    if not settings.fusion_model_enabled:
+        raise RuntimeError(
+            "SERVICE=fusion_model requires FUSION_MODEL_ENABLED=true. Expert B "
+            f"({settings.fusion_model_database_b!r}) must be indexed with "
+            "jina-clip-v2 embeddings first -- see src/services/fusion_model_service.py."
+        )
+
+    from src.apis.clip_api import build_router as build_clip_router
+    from src.externals.qdrant_client import QdrantSearchClient
+    from src.modules.clip_models.jina_clip_v2 import JinaClipV2Model
+    from src.modules.clip_models.siglip2 import Siglip2Model
+    from src.services.fusion_model_service import FusionModelSearchService
+
+    siglip = Siglip2Model(
+        settings.fusion_model_cuda_visible_devices,
+        settings.transformers_cache,
+        settings.huggingface_hub_token,
+    )
+    jina = JinaClipV2Model(
+        settings.fusion_model_cuda_visible_devices,
+        settings.transformers_cache,
+    )
+    qdrant_a = QdrantSearchClient(
+        settings.fusion_model_qdrant_url,
+        settings.fusion_model_qdrant_port,
+        settings.fusion_model_qdrant_grpc_port,
+        settings.fusion_model_database_a,
+    )
+    qdrant_b = QdrantSearchClient(
+        settings.fusion_model_qdrant_url,
+        settings.fusion_model_qdrant_port,
+        settings.fusion_model_qdrant_grpc_port,
+        settings.fusion_model_database_b,
+    )
+    service = FusionModelSearchService(
+        siglip,
+        jina,
+        qdrant_a,
+        qdrant_b,
+        gating_ckpt=settings.fusion_model_gating_ckpt,
+        gating_mode=settings.fusion_model_gating_mode,
+        rrf_blend=settings.fusion_model_rrf_blend,
+        top_k=settings.fusion_model_top_k,
+    )
+    app = create_app()
+    app.include_router(build_clip_router(service, "/fusion_model"))
+    return app
 
 
 def _host_port_workers(service_name: str, settings: Settings) -> tuple[str, int, int]:
@@ -261,6 +328,11 @@ def _host_port_workers(service_name: str, settings: Settings) -> tuple[str, int,
             settings.siglip_v2_b_host,
             settings.siglip_v2_b_port,
             settings.siglip_v2_b_max_workers,
+        ),
+        "fusion_model": (
+            settings.fusion_model_host,
+            settings.fusion_model_port,
+            settings.fusion_model_max_workers,
         ),
         "metaclip": (
             settings.metaclip_host,

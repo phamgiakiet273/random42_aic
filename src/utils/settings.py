@@ -59,9 +59,12 @@ class Settings(BaseSettings):
     result_manager_max_workers: int = Field(5, alias="RESULT_MANAGER_MAX_WORKERS")
 
     # --- Nginx media server ---
-    nginx_image_host: str = Field("http://localhost:9027/img", alias="NGINX_IMAGE_HOST")
+    # Relative so media stays same-origin: an absolute host only works when the
+    # browser runs on the server. The "/media/..." prefix avoids ad-blocker
+    # filter lists, which block generic "/img/" and "/video/" paths.
+    nginx_image_host: str = Field("/media/frames", alias="NGINX_IMAGE_HOST")
     nginx_video_host: str = Field(
-        "http://localhost:9027/video", alias="NGINX_VIDEO_HOST"
+        "/media/clips", alias="NGINX_VIDEO_HOST"
     )
     nginx_image_port: int = Field(9027, alias="NGINX_IMAGE_PORT")
     nginx_video_port: int = Field(9027, alias="NGINX_VIDEO_PORT")
@@ -137,6 +140,40 @@ class Settings(BaseSettings):
     metaclip_dummy_vector_path: str = Field(
         "data/example/cat_metaclip.npy", alias="METACLIP_DUMMY_VECTOR_PATH"
     )
+
+    # --- Expert fusion (SigLIP2 + jina-clip-v2 + learned gating) ---
+    # Dormant: needs a second Qdrant collection of jina-clip-v2 embeddings
+    # (1024-d). `SERVICE=fusion_model` fails fast until it is enabled.
+    fusion_model_enabled: bool = Field(False, alias="FUSION_MODEL_ENABLED")
+    fusion_model_host: str = Field("0.0.0.0", alias="FUSION_MODEL_HOST")
+    fusion_model_port: int = Field(9032, alias="FUSION_MODEL_PORT")
+    fusion_model_host_public: str = Field(
+        "http://localhost:9032", alias="FUSION_MODEL_HOST_PUBLIC"
+    )
+    fusion_model_max_workers: int = Field(1, alias="FUSION_MODEL_MAX_WORKERS")
+    fusion_model_cuda_visible_devices: str = Field(
+        "0", alias="FUSION_MODEL_CUDA_VISIBLE_DEVICES"
+    )
+    fusion_model_qdrant_url: str = Field(
+        "http://localhost", alias="FUSION_MODEL_QDRANT_URL"
+    )
+    fusion_model_qdrant_port: int = Field(6333, alias="FUSION_MODEL_QDRANT_PORT")
+    fusion_model_qdrant_grpc_port: int = Field(
+        6334, alias="FUSION_MODEL_QDRANT_GRPC_PORT"
+    )
+    # Expert A is the existing SigLIP2 collection; expert B does not exist yet.
+    fusion_model_database_a: str = Field(
+        "PUMPKING_SIGLIP_V2", alias="FUSION_MODEL_DATABASE_A"
+    )
+    fusion_model_database_b: str = Field("EXPERT_B_V1", alias="FUSION_MODEL_DATABASE_B")
+    fusion_model_gating_ckpt: str = Field(
+        "data/weights/gating_mlp_v3.pt", alias="FUSION_MODEL_GATING_CKPT"
+    )
+    # "context" = transparent overlap-aware rule (default, see context_rule_wb);
+    # "mlp" = learned gating MLP (kept for experiments -- v3 is collapsed).
+    fusion_model_gating_mode: str = Field("context", alias="FUSION_MODEL_GATING_MODE")
+    fusion_model_rrf_blend: float = Field(0.0, alias="FUSION_MODEL_RRF_BLEND")
+    fusion_model_top_k: int = Field(100, alias="FUSION_MODEL_TOP_K")
 
     # --- Rerank (dominant-color re-sort) ---
     rerank_host: str = Field("0.0.0.0", alias="RERANK_HOST")
