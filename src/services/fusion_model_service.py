@@ -31,7 +31,6 @@ from src.modules.fusion_model.gating import (
     make_conf_features,
 )
 from src.utils.logger import get_logger
-from src.utils.metadata import get_frame_path, get_video_path
 from src.utils.settings import get_settings
 
 logger = get_logger()
@@ -170,7 +169,6 @@ class FusionModelSearchService:
         video_filter: str | list[str] | None = None,
         s2t_filter: str | None = None,
         return_s2t: bool = True,
-        return_object: bool = True,
         frame_class_filter: list[int] | None = None,
         skip_frames: list[dict] | None = None,
         sort_to_news: bool = True,
@@ -206,7 +204,6 @@ class FusionModelSearchService:
                 skip_frames=skip_frames or [],
                 sort_to_news=False,
                 return_s2t=return_s2t,
-                return_object=return_object,
             ),
             asyncio.to_thread(
                 self.qdrant_b.search,
@@ -218,7 +215,6 @@ class FusionModelSearchService:
                 skip_frames=skip_frames or [],
                 sort_to_news=False,
                 return_s2t=return_s2t,
-                return_object=return_object,
             ),
         )
         logger.debug(
@@ -251,7 +247,6 @@ class FusionModelSearchService:
         video_filter: str | None = None,
         s2t_filter: str | None = None,
         return_s2t: bool = True,
-        return_object: bool = True,
         frame_class_filter: list[int] | None = None,
         skip_frames: list[dict] | None = None,
         sort_to_news: bool = True,
@@ -279,7 +274,6 @@ class FusionModelSearchService:
             skip_frames=skip_frames or [],
             sort_to_news=False,
             return_s2t=return_s2t,
-            return_object=return_object,
         )
         logger.info(
             f"[JINA-ALONE] search done in {(time.time() - t0) * 1000:.0f}ms "
@@ -293,20 +287,11 @@ class FusionModelSearchService:
     # ---- response post-processing (mirrors ClipSearchService) ----
 
     def _add_paths(self, records: list[dict]) -> list[dict]:
-        settings = self._settings
+        """Rank each record (mirrors ClipSearchService).
+
+        Doc comment [p]: `video_path`/`frame_path` are no longer shipped -- the
+        client builds media URLs from `GET /hub/media_config`.
+        """
         for idx, record in enumerate(records):
             record["index"] = idx
-            batch = int(record["idx_folder"])
-            record["video_path"] = os.path.relpath(
-                get_video_path(batch=batch, video_name=record["video_name"]),
-                settings.dataset_path_origin,
-            )
-            record["frame_path"] = os.path.relpath(
-                get_frame_path(
-                    batch=batch,
-                    video_name=record["video_name"],
-                    frame_name=record["keyframe_id"],
-                ),
-                settings.dataset_path_team,
-            )
         return records
