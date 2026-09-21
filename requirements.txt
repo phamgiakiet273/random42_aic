@@ -30,7 +30,9 @@ tqdm
 opencv-python
 ultralytics
 einops
-scipy
+# SciPy 1.9.1 has no CPython 3.11 wheel and falls back to a source build.
+# Pin a release with a manylinux CPython 3.11 wheel for the Docker image.
+scipy==1.11.4
 imagedominantcolor
 
 # --- pre_processing: speech-to-text ---

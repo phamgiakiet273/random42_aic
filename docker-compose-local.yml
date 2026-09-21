@@ -8,10 +8,11 @@ services:
       context: .
       dockerfile: Dockerfile.local
     env_file: .env
+    user: "${HOST_UID}:${HOST_GID}"
     environment:
       SERVICE: hub
     volumes:
       - ./src:/app/src
-      - ./logs:/app/logs
+      - ${LOG_HOST_PATH}:/app/logs
     ports: ["9021:9021"]
     restart: unless-stopped

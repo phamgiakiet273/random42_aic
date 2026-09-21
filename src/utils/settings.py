@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     cuda_device_order: str = Field("PCI_BUS_ID", alias="CUDA_DEVICE_ORDER")
     request_timeout: int = Field(30, alias="REQUEST_TIMEOUT")
     timeout_keep_alive: int = Field(30, alias="TIMEOUT_KEEP_ALIVE")
+    qdrant_upsert_batch_size: int = Field(
+        1_000, alias="QDRANT_UPSERT_BATCH_SIZE"
+    )
     huggingface_hub_token: str | None = Field(None, alias="HUGGINGFACE_HUB_TOKEN")
 
     # --- Dataset / metadata paths ---
@@ -42,6 +45,9 @@ class Settings(BaseSettings):
     hub_port: int = Field(9021, alias="HUB_PORT")
     hub_max_workers: int = Field(5, alias="HUB_MAX_WORKERS")
     base_url: str = Field("http://localhost:9021/", alias="BASE_URL")
+    retrieval_model_registry: dict[str, str] = Field(
+        default_factory=dict, alias="RETRIEVAL_MODEL_REGISTRY"
+    )
 
     # --- Result manager ---
     result_manager_host: str = Field("0.0.0.0", alias="RESULT_MANAGER_HOST")

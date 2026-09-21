@@ -1,111 +1,48 @@
 """Hub gateway router — prefix `/hub`.
 
-Replaces `routes/hub_router.py` + the hub-facing endpoints of
-`handlers/hub_handler.py`. Swagger example defaults on `Form(...)` params are
-kept here (this is the right layer for them), matching the legacy router.
-
-Legacy only wired `siglip_alpha_*`/`siglip_beta_*` passthrough routes; the
-`/{variant}_*` routes below are generated for `siglip_alpha`, `siglip_beta`,
-*and* `metaclip` since `HubGatewayService` generalized its passthrough methods
-over a `variant` argument (see src/services/hub_service.py) instead of one
-copy-pasted method set per CLIP backend.
+All retrieval modes share `POST /hub/search`; the form's `model` and
+`search_type` fields select the configured backend and operation.
 """
 
 from __future__ import annotations
 
+from typing import Literal
+
 import ujson
-from fastapi import APIRouter, Form
+from fastapi import APIRouter, Form, HTTPException
 from fastapi.responses import FileResponse, RedirectResponse
 
 from src.common.schemas.api import APIResponse
 from src.common.schemas.rerank import VideoMetadata
 from src.services.hub_service import HubGatewayService
 
-_CLIP_VARIANTS = ("siglip_alpha", "siglip_beta", "metaclip")
+SearchType = Literal["text", "image", "temporal", "scroll"]
 
 
-def _register_clip_variant_routes(
-    router: APIRouter, service: HubGatewayService, variant: str
-) -> None:
-    """Register the 4 passthrough routes (text/image/temporal/scroll) for one CLIP variant."""
+def _parse_json_list(value: str, field_name: str) -> list:
+    """Decode a form field that represents a JSON list."""
+    try:
+        parsed = ujson.loads(value)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400, detail=f"{field_name} must be valid JSON"
+        ) from exc
+    if not isinstance(parsed, list):
+        raise HTTPException(status_code=400, detail=f"{field_name} must be a JSON list")
+    return parsed
 
-    async def text_search(
-        text: str = Form(...),
+
+def build_router(service: HubGatewayService) -> APIRouter:
+    router = APIRouter(prefix="/hub", tags=["hub"])
+
+    @router.post("/search")
+    async def search(
+        model: str = Form(...),
+        search_type: SearchType = Form(...),
+        text: str | None = Form(None),
+        image_path: str | None = Form(None),
         k: int = Form(100),
         video_filter: str | None = Form(None),
-        s2t_filter: str | None = Form(None),
-        return_s2t: bool = Form(True),
-        return_object: bool = Form(True),
-        frame_class_filter: str = Form("[]"),
-        skip_frames: str = Form("[]"),
-        sort_to_news: bool = Form(True),
-    ) -> APIResponse:
-        return await service.clip_text_search(
-            variant,
-            text,
-            k=k,
-            video_filter=video_filter,
-            s2t_filter=s2t_filter,
-            return_s2t=return_s2t,
-            return_object=return_object,
-            frame_class_filter=ujson.loads(frame_class_filter),
-            skip_frames=ujson.loads(skip_frames),
-            sort_to_news=sort_to_news,
-        )
-
-    async def image_search(
-        image_path: str = Form(...),
-        k: int = Form(100),
-        video_filter: str | None = Form(None),
-        s2t_filter: str | None = Form(None),
-        return_s2t: bool = Form(True),
-        return_object: bool = Form(True),
-        frame_class_filter: str = Form("[]"),
-        skip_frames: str = Form("[]"),
-        sort_to_news: bool = Form(True),
-    ) -> APIResponse:
-        return await service.clip_image_search_from_path(
-            variant,
-            image_path,
-            k=k,
-            video_filter=video_filter,
-            s2t_filter=s2t_filter,
-            return_s2t=return_s2t,
-            return_object=return_object,
-            frame_class_filter=ujson.loads(frame_class_filter),
-            skip_frames=ujson.loads(skip_frames),
-            sort_to_news=sort_to_news,
-        )
-
-    async def temporal_search(
-        text: str = Form(...),
-        k: int = Form(100),
-        video_filter: str | None = Form(None),
-        s2t_filter: str | None = Form(None),
-        return_s2t: bool = Form(True),
-        return_object: bool = Form(True),
-        frame_class_filter: str = Form("[]"),
-        skip_frames: str = Form("[]"),
-        sort_to_news: bool = Form(True),
-        main_event_index: int = Form(0),
-    ) -> APIResponse:
-        return await service.clip_temporal_search(
-            variant,
-            text,
-            k=k,
-            video_filter=video_filter,
-            s2t_filter=s2t_filter,
-            return_s2t=return_s2t,
-            return_object=return_object,
-            frame_class_filter=ujson.loads(frame_class_filter),
-            skip_frames=ujson.loads(skip_frames),
-            sort_to_news=sort_to_news,
-            main_event_index=main_event_index,
-        )
-
-    async def scroll(
-        k: int = Form(100),
-        video_filter: str = Form(...),
         s2t_filter: str | None = Form(None),
         time_in: str | None = Form(None),
         time_out: str | None = Form(None),
@@ -114,10 +51,28 @@ def _register_clip_variant_routes(
         frame_class_filter: str = Form("[]"),
         skip_frames: str = Form("[]"),
         sort_to_news: bool = Form(True),
+        main_event_index: int = Form(0),
         utility_feature: str = Form("shot"),
     ) -> APIResponse:
-        return await service.clip_scroll(
-            variant,
+        """Dispatch every retrieval operation through one stable hub endpoint."""
+        if search_type in {"text", "temporal"} and not text:
+            raise HTTPException(
+                status_code=400, detail=f"text is required for search_type={search_type}"
+            )
+        if search_type == "image" and not image_path:
+            raise HTTPException(
+                status_code=400, detail="image_path is required for search_type=image"
+            )
+        if search_type == "scroll" and not video_filter:
+            raise HTTPException(
+                status_code=400, detail="video_filter is required for search_type=scroll"
+            )
+
+        return await service.search(
+            model=model,
+            search_type=search_type,
+            text=text,
+            image_path=image_path,
             k=k,
             video_filter=video_filter,
             s2t_filter=s2t_filter,
@@ -125,22 +80,14 @@ def _register_clip_variant_routes(
             time_out=time_out,
             return_s2t=return_s2t,
             return_object=return_object,
-            frame_class_filter=ujson.loads(frame_class_filter),
-            skip_frames=ujson.loads(skip_frames),
+            frame_class_filter=_parse_json_list(
+                frame_class_filter, "frame_class_filter"
+            ),
+            skip_frames=_parse_json_list(skip_frames, "skip_frames"),
             sort_to_news=sort_to_news,
+            main_event_index=main_event_index,
             utility_feature=utility_feature,
         )
-
-    router.add_api_route(f"/{variant}_text_search", text_search, methods=["POST"])
-    router.add_api_route(f"/{variant}_image_search", image_search, methods=["POST"])
-    router.add_api_route(
-        f"/{variant}_temporal_search", temporal_search, methods=["POST"]
-    )
-    router.add_api_route(f"/{variant}_scroll", scroll, methods=["POST"])
-
-
-def build_router(service: HubGatewayService) -> APIRouter:
-    router = APIRouter(prefix="/hub", tags=["hub"])
 
     @router.get("/ping")
     async def ping() -> APIResponse:
@@ -230,8 +177,5 @@ def build_router(service: HubGatewayService) -> APIRouter:
     @router.post("/get_video_names_of_batch")
     async def get_video_names_of_batch(batch_id: str = Form("[0, 1]")) -> APIResponse:
         return await service.get_video_names_of_batch(ujson.loads(batch_id))
-
-    for variant in _CLIP_VARIANTS:
-        _register_clip_variant_routes(router, service, variant)
 
     return router

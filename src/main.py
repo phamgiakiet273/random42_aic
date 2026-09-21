@@ -24,22 +24,6 @@ from fastapi import FastAPI
 from fastapi.middleware.gzip import GZipMiddleware
 
 from src.apis.base import create_app
-from src.apis.clip_api import build_router as build_clip_router
-from src.apis.hub_api import build_router as build_hub_router
-from src.apis.rerank_api import build_router as build_rerank_router
-from src.apis.result_manager_api import build_router as build_result_manager_router
-from src.apis.submission_api import build_router as build_submission_router
-from src.apis.util_api import build_router as build_util_router
-from src.externals.qdrant_client import QdrantSearchClient
-from src.externals.translate_client import TranslateClient
-from src.modules.clip_models.metaclip import MetaclipModel
-from src.modules.clip_models.siglip2 import Siglip2Model
-from src.services.clip_service import ClipSearchService
-from src.services.hub_service import HubGatewayService
-from src.services.rerank_service import RerankService
-from src.services.result_manager_service import ResultManagerService
-from src.services.submission_service import SubmissionService
-from src.services.util_service import UtilService
 from src.utils.logger import get_logger, setup_logger
 from src.utils.settings import Settings, get_settings
 
@@ -74,6 +58,12 @@ def _build_clip_app(
     qdrant_port: int,
     qdrant_grpc_port: int,
 ) -> FastAPI:
+    # Import ML/Qdrant code only for a search service.  This keeps SERVICE=hub
+    # compatible with requirements-local.txt.
+    from src.apis.clip_api import build_router as build_clip_router
+    from src.externals.qdrant_client import QdrantSearchClient
+    from src.services.clip_service import ClipSearchService
+
     qdrant = QdrantSearchClient(
         qdrant_url, qdrant_port, qdrant_grpc_port, database_name
     )
@@ -84,6 +74,9 @@ def _build_clip_app(
 
 
 def _build_hub_app() -> FastAPI:
+    from src.apis.hub_api import build_router as build_hub_router
+    from src.services.hub_service import HubGatewayService
+
     service = HubGatewayService()
 
     @asynccontextmanager
@@ -104,6 +97,9 @@ def _build_hub_app() -> FastAPI:
 
 
 def _build_result_manager_app() -> FastAPI:
+    from src.apis.result_manager_api import build_router as build_result_manager_router
+    from src.services.result_manager_service import ResultManagerService
+
     service = ResultManagerService()
     app = create_app(
         enable_cors=True,
@@ -116,6 +112,9 @@ def _build_result_manager_app() -> FastAPI:
 
 
 def _build_submission_app() -> FastAPI:
+    from src.apis.submission_api import build_router as build_submission_router
+    from src.services.submission_service import SubmissionService
+
     service = SubmissionService()
 
     @asynccontextmanager
@@ -134,6 +133,9 @@ def _build_submission_app() -> FastAPI:
 
 
 def _build_rerank_app() -> FastAPI:
+    from src.apis.rerank_api import build_router as build_rerank_router
+    from src.services.rerank_service import RerankService
+
     service = RerankService()
     app = create_app()
     app.include_router(build_rerank_router(service))
@@ -141,6 +143,11 @@ def _build_rerank_app() -> FastAPI:
 
 
 def _build_util_app() -> FastAPI:
+    from src.apis.util_api import build_router as build_util_router
+    from src.externals.qdrant_client import QdrantSearchClient
+    from src.externals.translate_client import TranslateClient
+    from src.services.util_service import UtilService
+
     settings = get_settings()
     # Vector lookups (`UtilService.get_vector`) need *some* CLIP collection to
     # query; legacy hardcoded a "PUMPKING_SIGLIP_V2" client for this, so the
@@ -171,6 +178,8 @@ def build_app(service_name: str, settings: Settings) -> FastAPI:
     elif service_name == "util":
         app = _build_util_app()
     elif service_name == "siglip_alpha":
+        from src.modules.clip_models.siglip2 import Siglip2Model
+
         model = Siglip2Model(
             settings.siglip_v2_cuda_visible_devices,
             settings.transformers_cache,
@@ -185,6 +194,8 @@ def build_app(service_name: str, settings: Settings) -> FastAPI:
             settings.siglip_v2_qdrant_grpc_port,
         )
     elif service_name == "siglip_beta":
+        from src.modules.clip_models.siglip2 import Siglip2Model
+
         model = Siglip2Model(
             settings.siglip_v2_b_cuda_visible_devices,
             settings.transformers_cache,
@@ -199,6 +210,8 @@ def build_app(service_name: str, settings: Settings) -> FastAPI:
             settings.siglip_v2_b_qdrant_grpc_port,
         )
     elif service_name == "metaclip":
+        from src.modules.clip_models.metaclip import MetaclipModel
+
         model = MetaclipModel(
             settings.metaclip_cuda_visible_devices,
             settings.transformers_cache,
@@ -277,8 +290,10 @@ if __name__ == "__main__":
 
     _settings = get_settings()
     _host, _port, _workers = _host_port_workers(_SERVICE, _settings)
+    # Uvicorn requires an import string, rather than an already-created app,
+    # to honour `workers > 1` (the hub defaults to five workers).
     uvicorn.run(
-        app,
+        "src.main:app",
         host=_host,
         port=_port,
         workers=_workers,
