@@ -28,8 +28,10 @@ services:
     environment:
       VIDEO_UPSTREAM: "${VIDEO_UPSTREAM:-http://host.docker.internal:9028}"
       RESULT_MANAGER_UPSTREAM: "${RESULT_MANAGER_UPSTREAM:-http://host.docker.internal:9022}"
+      # only used by nginx/client-remote-frames.conf (clients with no local keyframes)
+      FRAMES_UPSTREAM: "${FRAMES_UPSTREAM:-http://host.docker.internal:9027}"
     volumes:
       - ./src/ui/aic/dist:/usr/share/nginx/html:ro
       - ${DATASET_HOST_PATH}:/data:ro
-      - ./nginx/client.conf:/etc/nginx/templates/default.conf.template:ro
+      - ${CLIENT_NGINX_CONF:-./nginx/client.conf}:/etc/nginx/templates/default.conf.template:ro
     restart: unless-stopped

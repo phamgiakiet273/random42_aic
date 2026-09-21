@@ -35,6 +35,8 @@ services:
       VITE_PROXY_HUB: "http://hub:9021"
       VITE_PROXY_MEDIA: "${VITE_PROXY_MEDIA:-http://host.docker.internal:9027}"
       VITE_PROXY_RESULT_MANAGER: "${VITE_PROXY_RESULT_MANAGER:-http://host.docker.internal:9022}"
+      # hostnames the UI may be reached by; see vite.config.js
+      VITE_ALLOWED_HOSTS: "${VITE_ALLOWED_HOSTS:-aic_fe.serverhub.id.vn,desktop-cs8oa5q-6,.ts.net,DESKTOP-BK06BOU,localhost}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -47,3 +49,6 @@ services:
 
 volumes:
   aic_node_modules:
+    # pre-seeded from the host copy so the frontend starts without the network
+    external: true
+    name: aic2026_aic_node_modules
