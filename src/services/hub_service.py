@@ -373,6 +373,19 @@ class HubGatewayService:
                 base_url=settings.metaclip_host_public,
                 backend_prefix="metaclip",
             ),
+            "jina": SearchModelConfig(
+                base_url=settings.jina_host_public,
+                backend_prefix="jina",
+                # Text and image only: the jina service has no temporal or
+                # scroll path wired, and scroll addresses shots by id range in
+                # the siglip collection.
+                search_types={"text", "image"},
+            ),
+            "fusion_model": SearchModelConfig(
+                base_url=settings.fusion_model_host_public,
+                backend_prefix="fusion_model",
+                search_types={"text"},
+            ),
         }
 
     def _model_config(self, model: str) -> SearchModelConfig:

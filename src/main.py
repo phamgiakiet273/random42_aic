@@ -39,6 +39,7 @@ _KNOWN_SERVICES = (
     "siglip_alpha",
     "siglip_beta",
     "metaclip",
+    "jina",
     "fusion_model",
     "rerank",
     "submission",
@@ -233,6 +234,21 @@ def build_app(service_name: str, settings: Settings) -> FastAPI:
             settings.metaclip_qdrant_port,
             settings.metaclip_qdrant_grpc_port,
         )
+    elif service_name == "jina":
+        from src.modules.clip_models.jina_clip_v2 import JinaClipV2Model
+
+        model = JinaClipV2Model(
+            settings.jina_cuda_visible_devices,
+            settings.transformers_cache,
+        )
+        app = _build_clip_app(
+            "jina",
+            model,
+            settings.jina_database_name,
+            settings.jina_qdrant_url,
+            settings.jina_qdrant_port,
+            settings.jina_qdrant_grpc_port,
+        )
     elif service_name == "fusion_model":
         app = _build_fusion_model_app(settings)
     else:
@@ -274,15 +290,15 @@ def _build_fusion_model_app(settings: Settings) -> FastAPI:
         settings.transformers_cache,
     )
     qdrant_a = QdrantSearchClient(
-        settings.fusion_model_qdrant_url,
-        settings.fusion_model_qdrant_port,
-        settings.fusion_model_qdrant_grpc_port,
+        settings.fusion_model_qdrant_a_url,
+        settings.fusion_model_qdrant_a_port,
+        settings.fusion_model_qdrant_a_grpc_port,
         settings.fusion_model_database_a,
     )
     qdrant_b = QdrantSearchClient(
-        settings.fusion_model_qdrant_url,
-        settings.fusion_model_qdrant_port,
-        settings.fusion_model_qdrant_grpc_port,
+        settings.fusion_model_qdrant_b_url,
+        settings.fusion_model_qdrant_b_port,
+        settings.fusion_model_qdrant_b_grpc_port,
         settings.fusion_model_database_b,
     )
     service = FusionModelSearchService(
@@ -328,6 +344,11 @@ def _host_port_workers(service_name: str, settings: Settings) -> tuple[str, int,
             settings.siglip_v2_b_host,
             settings.siglip_v2_b_port,
             settings.siglip_v2_b_max_workers,
+        ),
+        "jina": (
+            settings.jina_host,
+            settings.jina_port,
+            settings.jina_max_workers,
         ),
         "fusion_model": (
             settings.fusion_model_host,

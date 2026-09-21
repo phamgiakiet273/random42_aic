@@ -20,13 +20,16 @@ export const UTILITY_FEATURES = {
   UNIQUE: 'unique',
 }
 
-// Only siglip_alpha has a populated Qdrant collection on this deployment.
-// siglip_beta / metaclip / fusion_model are configured but have no index, so
-// they are listed as unavailable rather than offered and then failing.
+// MetaCLIP is gone: it never had an index here, while jina-clip-v2 does
+// (EXPERT_B_V1, 298k of the 872k keyframes, so it covers less of the corpus).
+// Unavailable entries are shown disabled rather than offered and then failing.
 export const MODELS = [
   { value: 'siglip_alpha', label: 'SigLIP2 Alpha', available: true },
+  // Wired and working, but its service is stopped: siglip_alpha + jina
+  // together pushed the host to ~800Mi free. Flip to true when the jina
+  // and qdrant-jina containers are running.
+  { value: 'jina', label: 'Jina CLIP v2', available: false },
   { value: 'siglip_beta', label: 'SigLIP2 Beta', available: false },
-  { value: 'metaclip', label: 'MetaCLIP', available: false },
   { value: 'fusion_model', label: 'Fusion (SigLIP2 + Jina)', available: false },
 ]
 
