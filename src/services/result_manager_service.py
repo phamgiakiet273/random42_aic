@@ -21,19 +21,10 @@ import ujson
 from src.common.schemas.api import APIResponse
 from src.utils.logger import get_logger
 from src.utils.settings import get_settings
+from src.utils.dataset_layout import frame_relpath, video_prefix, video_relpath
 from src.utils.video_batch import get_batch
 
 logger = get_logger()
-
-
-def _level_and_batch(video_name: str) -> tuple[int, int]:
-    try:
-        level_num = int(video_name.split("_")[0][1:])
-    except Exception as e:
-        raise ValueError(
-            f"video_name must be in format 'Lxx_Vyyy', e.g. 'L27_V011': {e}"
-        )
-    return level_num, get_batch(video_name)
 
 
 class ResultManagerService:
@@ -59,28 +50,9 @@ class ResultManagerService:
         "<batch>/frames/<SPLIT_NAME_LOW_RES>/Keyframes_{L|K}<level>/keyframes/<video_name>/<frame>.avif"
         """
         settings = get_settings()
-        frame_file = (
-            frame_name if frame_name.lower().endswith(".avif") else f"{frame_name}.avif"
-        )
-        level_num, batch = _level_and_batch(video_name)
-
-        # Batch-1 (K-prefixed) keyframe directories are always zero-padded to 2
-        # digits (e.g. "Keyframes_K05"), but single-digit levels parsed above are
-        # not (e.g. 5) -- undocumented in the legacy code, kept here as-is since
-        # it reflects a real directory naming convention on disk.
-        level_str = (
-            "0" + str(level_num) if batch == 1 and level_num < 10 else str(level_num)
-        )
-
-        prefix = "L" if batch == 0 else "K"
-        full_path = (
-            f"{batch}/frames/{settings.split_name}/Keyframes_{prefix}{level_str}"
-            f"/keyframes/{video_name}/{frame_file}"
-        )
-        full_path = full_path.replace(
-            f"/{settings.split_name}/", f"/{settings.split_name_low_res}/"
-        )
-
+        # dataset_layout owns the naming rule; the old hand-built
+        # "Keyframes_{L|K}<level>" could not express N001 or S01.
+        full_path = frame_relpath(get_batch(video_name), video_name, frame_name)
         target = f"{settings.nginx_image_host}/{full_path}"
         logger.info(f"get_image_redirect_url -> {target}")
         return target
@@ -90,21 +62,17 @@ class ResultManagerService:
     ) -> str:
         """Nginx redirect URL for the original (.jpg) frame image.
 
-        NOTE: legacy `send_img_original_handler` never branched on batch here (it
-        always used "Keyframes_L{level}", even for batch-1/K videos) -- unlike the
-        low-res path above, which does branch. That looks like the same class of
-        oversight fixed elsewhere in this port, but it was not in the requested
-        scope for this method, so the original (batch-agnostic, L-only) behavior
-        is preserved unchanged below.
+        Legacy always built "Keyframes_L<level>" here, even for batch-1 videos.
+        The prefix now comes from the name itself (dataset_layout.video_prefix),
+        so N001/S01 resolve too.
         """
         settings = get_settings()
         base = frame_name
         if base.lower().endswith(".avif") or base.lower().endswith(".jpg"):
             base = base.rsplit(".", 1)[0]
 
-        level_num, batch = _level_and_batch(video_name)
-
-        full_path = f"{batch}/frames/{settings.split_name}/Keyframes_L{level_num}/keyframes/{video_name}/{base}.jpg"
+        batch = get_batch(video_name)
+        full_path = f"{batch}/frames/{settings.split_name}/Keyframes_{video_prefix(video_name)}/keyframes/{video_name}/{base}.jpg"
         target = f"{settings.nginx_image_host}/{full_path}"
         logger.info(f"get_image_original_redirect_url -> {target}")
         return target
@@ -114,17 +82,7 @@ class ResultManagerService:
         "<batch>/videos/Videos_{L|K}<level>/video/<video_name>.mp4"
         """
         settings = get_settings()
-        level_num, batch = _level_and_batch(video_name)
-
-        # Same batch-1 zero-pad quirk as get_image_redirect_url (see comment there).
-        level_str = (
-            "0" + str(level_num) if batch == 1 and level_num < 10 else str(level_num)
-        )
-
-        video_file = f"{video_name}.mp4"
-        prefix = "L" if batch == 0 else "K"
-        full_path = f"{batch}/videos/Videos_{prefix}{level_str}/video/{video_file}"
-
+        full_path = video_relpath(get_batch(video_name), video_name)
         target = f"{settings.nginx_video_host}/{full_path}"
         logger.info(f"get_video_redirect_url -> {target}")
         return target

@@ -169,8 +169,19 @@ class QdrantSearchClient:
         shot_path: list[str],
         unique_json_path: str,
         create_collection: bool = True,
+        start_id: int = 0,
+        idx_folder_offset: int = 0,
+        create_indexes: bool = True,
     ) -> bool:
-        """Create (or reuse) `collection_name` and bulk-ingest feature vectors + metadata into it."""
+        """Create (or reuse) `collection_name` and bulk-ingest feature vectors + metadata into it.
+
+        Appending one batch to an existing collection (create_collection=False):
+        point ids are NOT stored anywhere -- `_prepare_data` recomputes them by
+        walking the frame tree in (batch, Keyframes_*, video, frame) order. So a
+        later batch must start at `start_id` = the number of frames in all earlier
+        batches, and pass `idx_folder_offset` = its batch number, or its points
+        would overwrite batch 0's ids and be labelled idx_folder 0.
+        """
         settings = get_settings()
         self.collection_name = collection_name
 
@@ -230,14 +241,14 @@ class QdrantSearchClient:
 
         logger.info("Building payload...")
 
-        struct_id = 0
+        struct_id = start_id
         batch_size = settings.qdrant_upsert_batch_size
         if batch_size < 1:
             raise ValueError("QDRANT_UPSERT_BATCH_SIZE must be at least 1")
         logger.info(f"Using Qdrant upsert batch size {batch_size}")
         batch_number = 0
 
-        for idx_folder, folder_path in enumerate(features_path):
+        for idx_folder, folder_path in enumerate(features_path, start=idx_folder_offset):
             insert_points = []
 
             for feat_npy in tqdm(sorted(os.listdir(folder_path))):
@@ -257,7 +268,11 @@ class QdrantSearchClient:
                     "keyframes",
                     video_name,
                 )
-                frame_list = sorted(os.listdir(frame_path))
+                # Same numeric order as _prepare_data and the feature rows.
+                frame_list = sorted(
+                    (f for f in os.listdir(frame_path) if os.path.splitext(f)[0].isdigit()),
+                    key=lambda f: int(os.path.splitext(f)[0]),
+                )
                 frame_list = [f.replace(".avif", ".jpg") for f in frame_list]
                 frame_nums = [
                     int(fn.replace(".jpg", "").replace(".avif", ""))
@@ -323,10 +338,11 @@ class QdrantSearchClient:
                     points=insert_points,
                 )
 
-            logger.info(
-                f"Dataset insert completed {idx_folder + 1}/{len(features_path)}"
-            )
+            logger.info(f"Dataset insert completed for batch {idx_folder}")
 
+        if not create_indexes:
+            logger.info("Payload index creation skipped (already on the collection)")
+            return True
         logger.info("Creating index...")
         self.client.create_payload_index(
             collection_name=self.collection_name,
@@ -691,10 +707,17 @@ class QdrantSearchClient:
             for split_path in sorted(glob.glob(split_glob)):
                 video_glob = os.path.join(split_path, "keyframes", "*")
                 for video_path in sorted(glob.glob(video_glob)):
-                    frames = os.listdir(video_path)
+                    # Numeric order and the full stem: S01 frame numbers pass 99999,
+                    # where `frame[:5]` truncated and string order put "100000"
+                    # before "10005". Identical to the old behaviour for 5-digit
+                    # names, so batch 0's ids do not move.
+                    frames = sorted(
+                        (f for f in os.listdir(video_path) if os.path.splitext(f)[0].isdigit()),
+                        key=lambda f: int(os.path.splitext(f)[0]),
+                    )
                     name = {
-                        int(frame[:5]): count + idx
-                        for idx, frame in enumerate(sorted(frames))
+                        int(os.path.splitext(frame)[0]): count + idx
+                        for idx, frame in enumerate(frames)
                     }
                     frame_names[os.path.basename(video_path)] = name
                     count += len(name)

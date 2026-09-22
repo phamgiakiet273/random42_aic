@@ -100,9 +100,11 @@ do_start() {
 do_verify() {
   head_ "verify"
   local pts mnt
+  # .expected_points is written by batch1/ingest.py (298,347 batch 0 + batch 1)
+  local want; want=$(cat .expected_points 2>/dev/null || echo 872631)
   pts=$(curl -s --max-time 10 localhost:6333/collections/PUMPKING_SIGLIP_V2 | jq -r '.result.points_count' 2>/dev/null)
-  if [ "$pts" = "872631" ]; then ok "PUMPKING_SIGLIP_V2: $pts points"
-  else bad "PUMPKING_SIGLIP_V2: got '$pts', expected 872631"; fi
+  if [ "$pts" = "$want" ]; then ok "PUMPKING_SIGLIP_V2: $pts points"
+  else bad "PUMPKING_SIGLIP_V2: got '$pts', expected $want"; fi
 
   # The reboot trap: storage must be a real device, never tmpfs.
   mnt=$(docker exec aic2026-qdrant-siglip-alpha-1 df -h /qdrant/storage 2>/dev/null | awk 'NR==2{print $1}')
@@ -142,6 +144,21 @@ do_verify() {
   code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -H "Host: $(hostname):10000" "$ui/")
   [ "$code" = "200" ] && ok "UI accepts this machine's hostname ($(hostname))" \
                       || bad "UI rejects Host $(hostname) -> $code; add it to VITE_ALLOWED_HOSTS"
+
+  # batch 1: one traffic-CCTV and one broadcast query; every returned frame must resolve
+  local q v kf code
+  for q in "N:a bus turning at an intersection" "S:cyclists racing on a road"; do
+    local pre=${q%%:*} text=${q#*:} bad_n=0 n=0
+    while read -r v kf; do
+      [ -z "$v" ] && continue; n=$((n+1))
+      code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
+        "http://localhost:9027/media/frames/1/frames/low_res_autoshot/Keyframes_${v%%_*}/keyframes/$v/$kf.avif")
+      [ "$code" = "200" ] || bad_n=$((bad_n+1))
+    done < <(curl -s --max-time 120 -X POST localhost:9021/hub/search -F 'model=siglip_alpha' -F 'search_type=text' \
+               -F "text=$text" -F 'k=10' -F "video_filter=$pre" | jq -r '.data[] | "\(.video_name|sub("\\.mp4$";"")) \(.keyframe_id)"' 2>/dev/null)
+    if [ "$n" -gt 0 ] && [ "$bad_n" = 0 ]; then ok "batch 1 ($pre) search: $n hits, all frames resolve"
+    else bad "batch 1 ($pre) search: $n hits, $bad_n frames did not resolve"; fi
+  done
 
   printf '\n    UI: %shttp://localhost:10000%s\n' "$GRN" "$RST"
 }

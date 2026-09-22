@@ -11,11 +11,13 @@ from src.utils.settings import get_settings
 logger = get_logger()
 
 # Prefix -> batch index. Extend this if the dataset adds more batches/prefixes.
-BATCH_PREFIXES = {"L": 0, "K": 1, "X": 2}
+# Batch 1 was K01-K20 until 2026-09; it is now the AIC 2026 set: N001-N100
+# (traffic CCTV) + S01 (broadcast). K is kept so old logs/CSVs still resolve.
+BATCH_PREFIXES = {"L": 0, "K": 1, "N": 1, "S": 1, "X": 2}
 
 
 def get_batch(video_name: str) -> int:
-    """Resolve a batch index from a video name's leading letter (L->0, K->1, X->2)."""
+    """Resolve a batch index from a video name's leading letter (L->0, K/N/S->1, X->2)."""
     for prefix, batch in BATCH_PREFIXES.items():
         if video_name.startswith(prefix):
             return batch
@@ -28,20 +30,20 @@ def get_neighboring_frames(
     """Return the `k` low-res frame paths immediately before/after `frame_num` in `video_name`."""
     settings = get_settings()
     batch = get_batch(video_name)
-    prefix = video_name[0]
 
     frame_dir = os.path.join(
         settings.base_path,
         str(batch),
         "frames",
         settings.split_name_low_res,
-        f"Keyframes_{prefix}{video_name[1:3]}",
+        f"Keyframes_{video_name.split('_')[0]}",
         "keyframes",
         video_name,
     )
 
     all_frames = sorted(
-        glob.glob(os.path.join(frame_dir, f"*{settings.lowres_format}"))
+        glob.glob(os.path.join(frame_dir, f"*{settings.lowres_format}")),
+        key=lambda f: int(os.path.splitext(os.path.basename(f))[0]),
     )
     if not all_frames:
         logger.warning(

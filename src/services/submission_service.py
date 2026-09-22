@@ -23,6 +23,20 @@ from src.utils.logger import get_logger
 logger = get_logger()
 
 
+def official_video_id(name: str) -> str:
+    """Internal name -> the id DRES knows.
+
+    The codebase splits video names on "_" everywhere (dataset_layout, metadata,
+    ingestion), so AIC 2026's batch-1 videos are stored as N001_V001 / S01_V001.
+    They ship as N001-V001 / S01-V001 (the names inside the organiser zips), so
+    submissions put the hyphen back. L/K names are official as-is.
+    """
+    stem, dot, ext = str(name).partition(".")
+    if stem[:1] in ("N", "S") and "_" in stem:
+        stem = stem.replace("_", "-")
+    return stem + dot + ext
+
+
 class DRESSubmitError(RuntimeError):
     """Raised when a DRES `/submit` call returns a non-2xx response."""
 
@@ -85,7 +99,7 @@ class SubmissionService:
                 {
                     "answers": [
                         {
-                            "mediaItemName": request.mediaItemName,
+                            "mediaItemName": official_video_id(request.mediaItemName),
                             "start": request.start,
                             "end": request.end,
                         }
@@ -93,18 +107,18 @@ class SubmissionService:
                 }
             ]
         }
-        logger.info(f"KIS-{request.mediaItemName}-{request.start}-{request.end}")
+        logger.info(f"KIS-{official_video_id(request.mediaItemName)}-{request.start}-{request.end}")
         return await self._submit(request.eval_id, request.session_id, payload)
 
     async def submit_qa(self, request: SubmitQARequest) -> APIResponse:
-        text = f"QA-{request.answer}-{request.video_id}-{request.time}"
+        text = f"QA-{request.answer}-{official_video_id(request.video_id)}-{request.time}"
         payload = {"answerSets": [{"answers": [{"text": text}]}]}
         logger.info(text)
         return await self._submit(request.eval_id, request.session_id, payload)
 
     async def submit_trake(self, request: SubmitTRAKERequest) -> APIResponse:
         elements = [e.strip() for e in request.frame_ids.split(",") if e.strip()]
-        text = f"TR-{request.video_id}-{','.join(elements)}"
+        text = f"TR-{official_video_id(request.video_id)}-{','.join(elements)}"
         payload = {"answerSets": [{"answers": [{"text": text}]}]}
         logger.info(text)
         return await self._submit(request.eval_id, request.session_id, payload)

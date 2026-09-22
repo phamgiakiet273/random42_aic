@@ -65,10 +65,14 @@ def matching(
     total_dict = {}
     for video_json in Path(speech_json).glob("*.json"):
         video_name = str(os.path.basename(video_json)).replace(".json", "")
-        if not video_name.startswith("L"):
-            continue
+        # Every video that has a transcript. (Was `startswith("L")`, which
+        # silently dropped batch 1 -- whose only audio is S01.)
         keyframes_folder = (
-            keyframe_jpg + "Keyframes_" + video_name[:3] + "/keyframes/" + video_name
+            keyframe_jpg
+            + "Keyframes_"
+            + video_name.split("_")[0]
+            + "/keyframes/"
+            + video_name
         )
         with open(str(video_json), encoding="utf-8-sig") as f:
             data = json.load(f)
