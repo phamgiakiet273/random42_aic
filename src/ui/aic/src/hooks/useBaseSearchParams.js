@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { getVideoNames } from '../api/search'
+import { getVideoNames, getSubsets, effectiveSubsets } from '../api/search'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useFiltersStore } from '../stores/filtersStore'
 import { useExcludedFramesStore } from '../stores/excludedFramesStore'
@@ -27,6 +27,13 @@ export function useBaseSearchParams() {
     staleTime: 5 * 60 * 1000,
   })
 
+  const { data: subsetCatalog } = useQuery({
+    queryKey: ['subsets'],
+    queryFn: getSubsets,
+    staleTime: 30 * 60 * 1000,
+  })
+  const checkedSubsets = effectiveSubsets(subsetCatalog, filters.subsets)
+
   const batchPrefixes = useMemo(
     () => (videoNames ?? []).filter((name) => !name.includes('_')),
     [videoNames],
@@ -39,13 +46,21 @@ export function useBaseSearchParams() {
     frameClassFilter: settings.frameClassFilter,
     skipFrames: skipFrames(),
     sortToNews: settings.sortToNews,
-    // An explicit video selection wins; otherwise the ticked batches constrain
-    // the search via their prefixes (video_filter matches by prefix), so the
-    // batch checkboxes affect results and not just the video list.
-    videoFilter: filters.selectedVideos.length
-      ? filters.selectedVideos.join(',')
-      : batchPrefixes.length
-        ? batchPrefixes.join(',')
+    // Precedence: an explicit video selection wins; else the checked content
+    // subsets scope the search (via `subset`, resolved to prefixes server-side);
+    // else the ticked batches' prefixes. Subsets and batchPrefixes are not both
+    // sent -- the server unions video_filter, which would re-widen to everything.
+    videoFilter:
+      filters.selectedVideos.length
+        ? filters.selectedVideos.join(',')
+        : checkedSubsets.length && subsetCatalog
+          ? undefined
+          : batchPrefixes.length
+            ? batchPrefixes.join(',')
+            : undefined,
+    subset:
+      !filters.selectedVideos.length && checkedSubsets.length && subsetCatalog
+        ? checkedSubsets.join(',')
         : undefined,
     s2tFilter: filters.s2tFilter || undefined,
     timeIn: filters.timeIn || undefined,

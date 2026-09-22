@@ -9,6 +9,9 @@ const DEFAULTS = {
   s2tFilter: '',
   timeIn: '',
   timeOut: '',
+  // null = fall back to the catalog's default-checked subsets (cooking/cycling/
+  // traffic off). An array = the user's explicit checkbox selection.
+  subsets: null,
 }
 
 export const useFiltersStore = create((set) => ({
@@ -20,6 +23,7 @@ export const useFiltersStore = create((set) => ({
         ? state.batches.filter((v) => v !== value)
         : [...state.batches, value],
     })),
+  setSubsets: (names) => set({ subsets: names }),
   toggleVideo: (name) =>
     set((state) => ({
       selectedVideos: state.selectedVideos.includes(name)

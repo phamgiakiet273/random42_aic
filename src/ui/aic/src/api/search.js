@@ -42,6 +42,7 @@ function searchFields({
   imagePath,
   k = 100,
   videoFilter,
+  subset,
   s2tFilter,
   timeIn,
   timeOut,
@@ -59,6 +60,7 @@ function searchFields({
     image_path: imagePath,
     k,
     video_filter: videoFilter,
+    subset,
     s2t_filter: s2tFilter,
     time_in: timeIn,
     time_out: timeOut,
@@ -122,6 +124,20 @@ export async function getNeighboringFrames(videoName, frameNum, k = 5) {
 export async function getVideoNames(batchIds = [0, 1]) {
   const data = await postForm('/hub/get_video_names_of_batch', { batch_id: batchIds })
   return Array.isArray(data) ? data : []
+}
+
+export async function getSubsets() {
+  // { name: { prefixes, label, default, desc } } — content subsets for scoping.
+  return get('/hub/subsets')
+}
+
+// Effective checked subset names: the user's explicit choice if they've touched
+// the checkboxes (`stored` is an array), otherwise the catalog's `default` set.
+export function effectiveSubsets(catalog, stored) {
+  if (Array.isArray(stored)) return stored
+  return Object.entries(catalog || {})
+    .filter(([, v]) => v.default)
+    .map(([name]) => name)
 }
 
 export function getMediaConfig() {

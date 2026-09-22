@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useRunSearch } from '../hooks/useRunSearch'
-import { getVideoNames } from '../api/search'
+import { getVideoNames, getSubsets, effectiveSubsets } from '../api/search'
 import { useFiltersStore } from '../stores/filtersStore'
 import { useExcludedFramesStore, frameKey } from '../stores/excludedFramesStore'
 import { videoStem } from '../api/media'
@@ -38,6 +38,19 @@ export default function FiltersPanel() {
     enabled: filters.batches.length > 0,
     staleTime: 5 * 60 * 1000,
   })
+
+  const { data: subsetCatalog = {} } = useQuery({
+    queryKey: ['subsets'],
+    queryFn: getSubsets,
+    staleTime: 30 * 60 * 1000,
+  })
+  const checkedSubsets = effectiveSubsets(subsetCatalog, filters.subsets)
+  const toggleSubset = (name) =>
+    filters.setSubsets(
+      checkedSubsets.includes(name)
+        ? checkedSubsets.filter((n) => n !== name)
+        : [...checkedSubsets, name],
+    )
 
   const batchPrefixes = videoNames.filter((name) => !name.includes('_'))
   const needle = filters.videoSearch.toLowerCase()
@@ -150,6 +163,34 @@ export default function FiltersPanel() {
               ))}
             </ul>
           )}
+        </div>
+
+        <div>
+          <p className="text-xs uppercase tracking-wide text-base-content/60 mb-1">
+            Content
+          </p>
+          <div className="grid grid-cols-2 gap-x-2">
+            {Object.entries(subsetCatalog).map(([name, info]) => (
+              <label
+                key={name}
+                className="label cursor-pointer justify-start gap-2 px-1 py-0.5"
+                title={info.desc}
+              >
+                <input
+                  type="checkbox"
+                  className="checkbox checkbox-xs"
+                  checked={checkedSubsets.includes(name)}
+                  onChange={() => toggleSubset(name)}
+                />
+                <span className="label-text text-xs">{info.label || name}</span>
+              </label>
+            ))}
+          </div>
+          <p className="text-[10px] text-base-content/50 mt-1">
+            {checkedSubsets.length
+              ? `Searching: ${checkedSubsets.join(', ')}. Unchecked content is excluded.`
+              : 'No content type checked — falling back to batch scope.'}
+          </p>
         </div>
 
         <div>
