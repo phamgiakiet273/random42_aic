@@ -102,6 +102,14 @@ def _build_hub_app() -> FastAPI:
         lifespan=lifespan,
     )
     app.include_router(build_hub_router(service))
+    # Mount the DRES submission router on the hub as well: the deployed stack runs
+    # the hub (not a standalone submission service), and the legacy UI reached
+    # submission through the hub too. Login stays lazy (creds arrive on comp day),
+    # so constructing the service here makes no network call.
+    from src.apis.submission_api import build_router as build_submission_router
+    from src.services.submission_service import SubmissionService
+
+    app.include_router(build_submission_router(SubmissionService()))
     return app
 
 

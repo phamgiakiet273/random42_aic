@@ -24,8 +24,19 @@ Just the keyframes:
 <DATASET_HOST_PATH>/0/frames/low_res_autoshot/Keyframes_L21/keyframes/L21_V001/00016.avif
 ```
 
-`DATASET_HOST_PATH` is the folder that **contains** `0/` — not `0/`, not
-`0/frames`.
+`DATASET_HOST_PATH` is the folder that **contains** `0/` **and** `1/` — not
+`0/`, not `0/frames`.
+
+Batch 1 (AIC 2026) is now served too, so you also need its keyframes:
+
+```
+<DATASET_HOST_PATH>/1/frames/low_res_autoshot/Keyframes_N001/keyframes/N001_V001/00000.avif
+```
+
+Grab them from the packaged tarball (`1_frames_low_res_autoshot.tar`, ~3 GB, on
+the server's F:) and unpack under `<DATASET_HOST_PATH>/1/frames/`. Without it,
+every `N` (traffic) / `S` (cycling) result shows a broken thumbnail — those are
+now ~40% of an unfiltered grid.
 
 You do **not** need `0/fps/`, `0/speech_to_text2/`, `0/shot/`, `utils/object/`
 or `0/features/`: the hub never opens them; the server's services read them and
@@ -128,6 +139,27 @@ Substitute a frame that actually exists.
 - **`.env` is read when a container is created**, not on restart. After editing
   it: `up -d --force-recreate`, not `restart`.
 - **Frames you don't have** 404 individually; the rest of the UI keeps working.
-  With only batch 0 locally, batch-1 (`K*`) results show broken thumbnails.
+  You now need batch 0 **and** batch 1 (`N`/`S`) keyframes locally; without the
+  batch-1 set every traffic/cycling result is a broken thumbnail. Or scope
+  searches with the UI **Content** checkboxes to the subsets you do have.
 - **Rebuild the SPA** (`bun run build`) after pulling frontend changes — nginx
   serves `dist/`, so source edits alone change nothing.
+
+## DRES submission (works on the client too)
+
+The 1-button submit works on this local build: the client runs the **hub**, which
+now hosts the `/submission` router (nginx proxies `/submission/` → hub, added to
+`nginx/client.conf`). The exact DRES name comes from `name_map.json`, which is
+**bundled in the repo** (`src/utils/name_map.json`, rides the `./src` mount), so
+you do NOT need the dataset for names to resolve (`N001-V001`, `S01-V001`,
+`M05_V001`, `L21_V001`, no extension).
+
+You only need to set the team's DRES credentials in `.env.client`:
+```ini
+SUBMIT_BASE_URL=https://eventretrieval.oj.io.vn   # or the URL BTC gives on the day
+SUBMIT_USERNAME=<team username>
+SUBMIT_PASSWORD=<team password>
+```
+Login is lazy: the header "DRES" badge shows connection; "connect" retries. Each
+client logs in independently (its own session); the dup-submit guard is per client.
+Rebuild `dist/` after pulling UI changes (`cd src/ui/aic && bun run build`).

@@ -32,6 +32,10 @@ def build_router(service: SubmissionService) -> APIRouter:
     async def get_eval_id(session_id: str) -> APIResponse:
         return await service.get_eval_id(session_id)
 
+    @router.get("/get_session_and_eval")
+    async def get_session_and_eval() -> APIResponse:
+        return await service.get_session_and_eval()
+
     @router.post("/submit_kis")
     async def submit_kis(request: SubmitKISRequest) -> APIResponse:
         try:

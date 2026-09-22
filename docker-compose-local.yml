@@ -18,6 +18,9 @@ services:
     volumes:
       - ./src:/app/src
       - ${LOG_HOST_PATH}:/app/logs
+      # Live name_map.json (authoritative DRES mediaItemName source) -- read-only,
+      # stays current through re-ingests. glob = /app/data/*/_meta/name_map.json.
+      - ${NAME_MAP_META_HOST_PATH:-/mnt/f/workspace/aic_2026/1/_meta}:/app/data/1/_meta:ro
     ports: ["9021:9021"]
     restart: unless-stopped
 

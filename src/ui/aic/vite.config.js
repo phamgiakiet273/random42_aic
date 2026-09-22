@@ -31,6 +31,8 @@ export default defineConfig({
     ).split(',').map((h) => h.trim()).filter(Boolean),
     proxy: {
       '/hub': { target: BACKEND.hub, changeOrigin: true },
+      // Submission (DRES) is mounted on the hub app, so it proxies to the hub too.
+      '/submission': { target: BACKEND.hub, changeOrigin: true },
       '/result_manager': { target: BACKEND.resultManager, changeOrigin: true },
       // Media is large and range-requested; keep it streaming rather than buffered.
       // "/media/..." rather than "/img" or "/video": ad-blocker filter lists

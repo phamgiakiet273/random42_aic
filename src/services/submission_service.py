@@ -8,7 +8,9 @@ startup hook -- before using the other methods.
 
 from __future__ import annotations
 
+import glob
 import json
+import os
 from http import HTTPStatus
 
 from src.common.schemas.api import APIResponse
@@ -22,19 +24,50 @@ from src.utils.logger import get_logger
 
 logger = get_logger()
 
+# ---------------------------------------------------------------------------
+# Video name -> the DRES mediaItemName.
+#
+# The final-round spec (docs/SUBMISSION_SPEC.md) is explicit: mediaItemName is
+# the ORIGINAL video file name WITHOUT extension. The original names differ per
+# batch (N001-V001 / S01-V001 use a hyphen, M05_V001 uses an underscore, L21_V001
+# has no separate map), so we DO NOT reconstruct them with a rule -- we read the
+# authoritative `name_map.json` the extractor built from the organiser's zips
+# ({internal_stem: official_stem}) and fall back to the internal stem as-is for
+# anything not in the map (e.g. batch-0 L). Never append the extension.
+# ---------------------------------------------------------------------------
+# Colon-separated globs. The live per-batch maps (server, mounted, authoritative
+# + current) AND a repo-bundled copy under src/ (rides the ./src mount, so client
+# deployments that have no dataset still resolve the exact names). Merged; the
+# live maps win where both exist.
+_NAME_MAP_GLOB = os.getenv(
+    "NAME_MAP_GLOB",
+    "/app/src/utils/name_map.json" + os.pathsep + "/app/data/*/_meta/name_map.json",
+)
+_name_map: dict[str, str] = {}
+_name_map_mtime: float = -1.0
+
+
+def _load_name_map() -> dict[str, str]:
+    """Merge every name_map.json under the configured globs; reload on change."""
+    global _name_map, _name_map_mtime
+    paths = [p for g in _NAME_MAP_GLOB.split(os.pathsep) for p in sorted(glob.glob(g))]
+    mtime = max((os.path.getmtime(p) for p in paths), default=0.0)
+    if mtime != _name_map_mtime:
+        merged: dict[str, str] = {}
+        for p in paths:
+            try:
+                merged.update(json.load(open(p, encoding="utf-8")))
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"name_map load failed for {p}: {e}")
+        _name_map, _name_map_mtime = merged, mtime
+        logger.info(f"name_map loaded: {len(merged)} videos from {len(paths)} file(s)")
+    return _name_map
+
 
 def official_video_id(name: str) -> str:
-    """Internal name -> the id DRES knows.
-
-    The codebase splits video names on "_" everywhere (dataset_layout, metadata,
-    ingestion), so AIC 2026's batch-1 videos are stored as N001_V001 / S01_V001.
-    They ship as N001-V001 / S01-V001 (the names inside the organiser zips), so
-    submissions put the hyphen back. L/K names are official as-is.
-    """
-    stem, dot, ext = str(name).partition(".")
-    if stem[:1] in ("N", "S") and "_" in stem:
-        stem = stem.replace("_", "-")
-    return stem + dot + ext
+    """Internal video name -> DRES mediaItemName (authoritative, no extension)."""
+    stem = str(name).partition(".")[0]  # drop any extension
+    return _load_name_map().get(stem, stem)
 
 
 class DRESSubmitError(RuntimeError):
@@ -91,6 +124,29 @@ class SubmissionService:
             status=HTTPStatus.OK.value,
             message="Active evaluation ID fetched",
             data={"eval_id": self.eval_id},
+        )
+
+    async def get_session_and_eval(self) -> APIResponse:
+        """One-call bootstrap for the UI: (lazy) login + the ACTIVE evaluation id.
+
+        Graceful when creds are unset (they arrive on competition day) -- returns
+        nulls with a clear message instead of raising, so the UI can prompt.
+        """
+        if not self.dres_client.username or not self.dres_client.password:
+            return APIResponse(
+                status=HTTPStatus.BAD_REQUEST.value,
+                message="DRES credentials not set (SUBMIT_USERNAME / SUBMIT_PASSWORD)",
+                data={"session_id": None, "eval_id": None},
+            )
+        if not self.dres_client.session_id:
+            await self.dres_client.login()
+        evaluations = await self.dres_client.get_evaluations(self.dres_client.session_id)
+        active = next((e for e in evaluations if e.get("status") == "ACTIVE"), None)
+        self.eval_id = active["id"] if active else None
+        return APIResponse(
+            status=HTTPStatus.OK.value,
+            message="ok" if active else "logged in, but no ACTIVE evaluation",
+            data={"session_id": self.dres_client.session_id, "eval_id": self.eval_id},
         )
 
     async def submit_kis(self, request: SubmitKISRequest) -> APIResponse:

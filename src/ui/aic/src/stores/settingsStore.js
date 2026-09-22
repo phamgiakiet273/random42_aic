@@ -15,6 +15,8 @@ const DEFAULTS = {
   downloadLimit: 100,
   // Server-rendered CSV (GET /hub/download) vs building it in the browser.
   serverSideExport: true,
+  // DRES submit: one-click direct by default; on = ask to confirm each submit.
+  confirmSubmit: false,
 }
 
 export const useSettingsStore = create((set) => ({

@@ -1,6 +1,8 @@
 import { Routes, Route, Link } from 'react-router-dom'
 import HomePage from './pages/HomePage'
 import ResultManagerPage from './pages/ResultManagerPage'
+import SubmissionStatus from './components/SubmissionStatus'
+import SubmissionBar from './components/SubmissionBar'
 
 export default function App() {
   return (
@@ -9,6 +11,7 @@ export default function App() {
         <div className="flex-1">
           <span className="text-lg font-semibold">Random42</span>
         </div>
+        <SubmissionBar />
         <Link to="/" className="btn btn-link btn-sm">
           Search Page
         </Link>
@@ -20,6 +23,8 @@ export default function App() {
         <Route path="/" element={<HomePage />} />
         <Route path="/result-manager" element={<ResultManagerPage />} />
       </Routes>
+      {/* Global DRES status toast (connection + last verdict). */}
+      <SubmissionStatus />
     </div>
   )
 }

@@ -10,6 +10,7 @@ import {
 } from '../api/media'
 import { useTrakeStore } from '../stores/trakeStore'
 import { useSettingsStore } from '../stores/settingsStore'
+import SubmitButton from './SubmitButton'
 
 // `urls` overrides the media-config-derived URLs. The result manager needs it:
 // a row read from a submission CSV has no batch, so its media has to be
@@ -136,9 +137,21 @@ export default function FrameDetailModal({ record, mediaConfig, urls, onClose })
     <dialog ref={dialogRef} className="modal" onClose={onClose}>
       {record && (
         <div className="modal-box max-w-3xl">
-          <h3 className="font-semibold text-lg">{videoName}</h3>
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="font-semibold text-lg">{videoName}</h3>
+            {/* Submit the CURRENT player frame (what the user scrubbed to), not
+                just the keyframe — the modal is where you pin the exact moment. */}
+            <SubmitButton
+              record={{
+                video_name: record.video_name,
+                keyframe_id: currentFrame ?? record.keyframe_id,
+                fps,
+              }}
+              label
+            />
+          </div>
           <p className="text-sm text-base-content/60 mb-3">
-            frame {record.keyframe_id} · {formatTimecode(startSeconds)} ·{' '}
+            frame {currentFrame ?? record.keyframe_id} · {formatTimecode(startSeconds)} ·{' '}
             {fpsKnown ? `${fps} fps` : 'fps unknown, assuming 25'}
             {record.score > 0 && <> · score {record.score.toFixed(4)}</>}
             {' · '}shot {record.related_start_frame}–{record.related_end_frame}
