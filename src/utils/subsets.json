@@ -1,0 +1,15 @@
+{
+  "_comment": "Content subsets -> video-code prefixes, used to scope search via the DB video_filter (video_name prefix match). EDIT the groupings/labels freely; the wrapper reloads this file. A prefix like 'N' matches all N001-N100; 'L26' matches L26_V*.",
+  "subsets": {
+    "news":        {"prefixes": ["L21", "L22"],               "desc": "HTV '60 giay' general news"},
+    "cycling":     {"prefixes": ["L23", "S01"],               "desc": "Cycling race broadcast (HTV The Thao) - spans batch 0 + S01"},
+    "festival":    {"prefixes": ["L24"],                      "desc": "Cultural performance / dragon dance / lantern"},
+    "education":   {"prefixes": ["L25"],                      "desc": "Students / science / school events"},
+    "cooking":     {"prefixes": ["L26"],                      "desc": "'Mon Ngon Moi Ngay' cooking show (498 episodes)"},
+    "documentary": {"prefixes": ["L27", "L28", "L29"],        "desc": "Travel / rural / nature / craft documentary & vlog"},
+    "community":   {"prefixes": ["L30"],                      "desc": "Tuoi Tre community / social"},
+    "traffic":     {"prefixes": ["N"],                        "desc": "Traffic CCTV cameras N001-N100"},
+    "broadcast":   {"prefixes": ["L21","L22","L23","L24","L25","L26","L27","L28","L29","L30","S01"], "desc": "Everything except traffic CCTV"},
+    "batch0":      {"prefixes": ["L21","L22","L23","L24","L25","L26","L27","L28","L29","L30"], "desc": "All original batch-0 levels"}
+  }
+}

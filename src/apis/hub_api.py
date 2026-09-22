@@ -18,6 +18,7 @@ from pydantic import ValidationError
 
 from src.common.schemas.api import APIResponse
 from src.common.schemas.hub import SearchRequest
+from src.utils.subsets import catalog as subset_catalog, merge_video_filter
 from src.common.schemas.rerank import VideoMetadata
 from src.services.hub_service import HubGatewayService
 
@@ -77,6 +78,7 @@ def _register_clip_variant_routes(
         text: str = Form(...),
         k: int = Form(100),
         video_filter: str | None = Form(None),
+        subset: str | None = Form(None),
         s2t_filter: str | None = Form(None),
         return_s2t: bool = Form(True),
         frame_class_filter: str = Form("[]"),
@@ -84,6 +86,7 @@ def _register_clip_variant_routes(
         sort_to_news: bool = Form(True),
         main_event_index: int = Form(0),
     ) -> APIResponse:
+        video_filter = merge_video_filter(subset, video_filter)
         return await service.clip_temporal_search(
             variant,
             text,
@@ -142,6 +145,7 @@ def build_router(service: HubGatewayService) -> APIRouter:
         image_path: str | None = Form(None),
         k: int = Form(100),
         video_filter: str | None = Form(None),
+        subset: str | None = Form(None),
         s2t_filter: str | None = Form(None),
         time_in: str | None = Form(None),
         time_out: str | None = Form(None),
@@ -152,6 +156,9 @@ def build_router(service: HubGatewayService) -> APIRouter:
         main_event_index: int = Form(0),
         utility_feature: str = Form("shot"),
     ) -> APIResponse:
+        # `subset` (e.g. "news", "traffic") folds its content-code prefixes into
+        # video_filter so a search is scoped to one content type via the DB.
+        video_filter = merge_video_filter(subset, video_filter)
         try:
             request = SearchRequest(
                 model=model,
@@ -228,6 +235,11 @@ def build_router(service: HubGatewayService) -> APIRouter:
             media_type="text/csv",
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
+
+    @router.get("/subsets")
+    async def list_subsets() -> APIResponse:
+        """Content subsets (name -> prefixes, desc) for scoping a search."""
+        return APIResponse(status=200, message="Success", data=subset_catalog())
 
     @router.get("/media_config")
     async def media_config() -> APIResponse:
