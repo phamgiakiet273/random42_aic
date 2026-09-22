@@ -86,8 +86,12 @@ not re-sort (doc comment [o]).
   re-parsed by every consumer.
 - **`s2t` is a real JSON array.** It used to be `str(payload["s2t"])`, i.e. a
   Python repr with single quotes that no JSON parser accepts.
-- **`object` and `return_object` are gone** (doc comment [k]). The field was
-  empty on all 872,631 indexed points.
+- **`object` and `return_object` are gone from the default response** (doc
+  comment [k]) — the field was empty when it was dropped. It is now populated in
+  the *payload* for batch-1 `N` (CCTV) frames (`{bbox,object,conf}` per
+  detection, from the region pipeline), and region-fused CCTV hits carry a
+  `regions` array of the matched crops (bbox + label) for the UI to draw. Index
+  size is now 526,656 points (batch 0 + AIC-2026 batch 1).
 - **`frame_path` / `video_path` are gone** (doc comments [p]/[t]). Records carry
   identifiers only; clients build media URLs from `GET /hub/media_config`.
 - **Scroll results carry `score: 0.0`**, not the previous fabricated `"0.273"`.

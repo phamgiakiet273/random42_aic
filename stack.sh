@@ -101,7 +101,7 @@ do_verify() {
   head_ "verify"
   local pts mnt
   # .expected_points is written by batch1/ingest.py (298,347 batch 0 + batch 1)
-  local want; want=$(cat .expected_points 2>/dev/null || echo 872631)
+  local want; want=$(cat .expected_points 2>/dev/null || echo 526656)
   pts=$(curl -s --max-time 10 localhost:6333/collections/PUMPKING_SIGLIP_V2 | jq -r '.result.points_count' 2>/dev/null)
   if [ "$pts" = "$want" ]; then ok "PUMPKING_SIGLIP_V2: $pts points"
   else bad "PUMPKING_SIGLIP_V2: got '$pts', expected $want"; fi

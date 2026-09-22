@@ -13,7 +13,7 @@ logger = get_logger()
 # Prefix -> batch index. Extend this if the dataset adds more batches/prefixes.
 # Batch 1 was K01-K20 until 2026-09; it is now the AIC 2026 set: N001-N100
 # (traffic CCTV) + S01 (broadcast). K is kept so old logs/CSVs still resolve.
-BATCH_PREFIXES = {"L": 0, "K": 1, "N": 1, "S": 1, "X": 2}
+BATCH_PREFIXES = {"L": 0, "K": 1, "N": 1, "S": 1, "M": 1, "X": 2}
 
 
 def get_batch(video_name: str) -> int:
