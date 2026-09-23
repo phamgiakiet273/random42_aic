@@ -33,9 +33,11 @@ GATEWAY=docker-compose-gateway.yml
 # (every hub and the gateway forward /submission/* to it); CPU-only, no GPU.
 SERVICES=(qdrant-siglip-alpha media_server util result_manager submission siglip_alpha)
 
-EXT4=/srv/random42
-DATA=/mnt/e/workspace/AIC_2026/data
-VIDEO=/mnt/f/workspace/aic_2026/original
+# Machine-specific locations come from .env, so the same script runs on any
+# machine the stack is restored to (docs/RESTORE.md).
+envval() { sed -n "s/^$1=//p" .env 2>/dev/null | tail -1 | tr -d '"'; }
+QSTORE=$(envval QDRANT_STORAGE_HOST_PATH); QJINA=$(envval QDRANT_JINA_STORAGE_HOST_PATH)
+MCACHE=$(envval MODEL_CACHE_HOST_PATH); DATA=$(envval DATASET_HOST_PATH); VIDEO=$(envval VIDEO_HOST_PATH)
 
 RED=$'\e[31m'; GRN=$'\e[32m'; YEL=$'\e[33m'; RST=$'\e[0m'
 ok()   { printf '    %s✓%s %s\n' "$GRN" "$RST" "$*"; }
@@ -49,16 +51,18 @@ preflight() {
   check() { # check <label> <path>
     if [ -e "$2" ]; then ok "$1"; else bad "$1  -- missing: $2"; fail=1; fi
   }
-  check "qdrant index (ext4)"  "$EXT4/qdrant_storage/collections/PUMPKING_SIGLIP_V2"
-  check "jina index (ext4)"    "$EXT4/qdrant_jina_storage/collections/EXPERT_B_V1"
-  check "model cache (ext4)"   "$EXT4/hf_cache/hub"
-  check "dataset batch 0 (E:)" "$DATA/0/frames/low_res_autoshot"
-  check "source videos (F:)"   "$VIDEO/0/videos/Videos_L21/video"
+  check "qdrant index"         "$QSTORE/collections/PUMPKING_SIGLIP_V2"
+  check "jina index"           "$QJINA/collections/EXPERT_B_V1"
+  check "model cache"          "$MCACHE/hub"
+  check "dataset batch 0"      "$DATA/0/frames/low_res_autoshot"
+  check "dataset batch 1"      "$DATA/1/frames/low_res_autoshot"
+  check "videos batch 0"       "$VIDEO/0/videos/Videos_L21/video"
+  check "videos batch 1"       "$VIDEO/1/videos/Videos_M05/video"
   check "repo logs dir"        "./logs"
   if [ "$fail" = 1 ]; then
     printf '\n%sRefusing to start.%s If the paths above look right but are reported\n' "$RED" "$RST"
-    echo "missing, the 9p mounts probably did not attach after a reboot. Check with:"
-    echo "    ls /mnt/e /mnt/f"
+    echo "missing, the drive mounts probably did not attach after a reboot (or .env"
+    echo "points elsewhere -- the paths come from .env). Check with:  ls $DATA $VIDEO"
     echo "and if they are empty, restart WSL from PowerShell: wsl --shutdown"
     return 1
   fi

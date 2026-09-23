@@ -112,6 +112,8 @@ The Qdrant index is **restored from disk** (`QDRANT_STORAGE_HOST_PATH`, a fast l
 built once by the batch pipeline, not at startup. **Never call `GET /{model}/setup_database` on a built
 index**: it re-ingests and destroys the collection (the public gateway refuses it).
 
+Moving the stack to another PC (the H: drive): **`docs/RESTORE.md`** — one script, no preprocessing.
+
 Open **http://localhost:10000** for the UI (public: `https://$NGROK_DOMAIN` after `./stack.sh start --remote`).
 
 ## Pre-processing pipeline
