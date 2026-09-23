@@ -5,7 +5,7 @@
 #
 #   bash handover/bundle.sh data    # dataset + videos (additive; run any time)
 #   bash handover/bundle.sh state   # Qdrant index + images + node_modules + repo + MANIFEST
-#                                   # (stops Qdrant ~5 min for a consistent copy)
+#                                   # (live: no service is stopped)
 #
 # Bulk copies go through Windows robocopy/tar (native NTFS writes); WSL's 9p is
 # far slower for small files. Never walks H: (slow USB): counts come from the source.
@@ -34,21 +34,29 @@ stage_data() {
 
 stage_state() {
   log "== state"
-  # region vectors (kept so the region collection can be rebuilt) + name maps
-  rc 'E:\workspace\AIC_2026\data\1\region' "$HW\\data\\aic_2025\\1\\region" /S
+  # name maps (the region vectors are NOT bundled: their collection is in the index)
   rc 'F:\workspace\aic_2026\1\_meta' "$HW\\data\\aic_2025\\1\\_meta" /S
 
-  log "   Qdrant index: stopping siglip_alpha + qdrant for a consistent copy"
-  docker stop -t 20 aic2026-siglip_alpha-1 aic2026-qdrant-siglip-alpha-1 >/dev/null
-  SRC=$(envval QDRANT_STORAGE_HOST_PATH)
-  $SUDO rm -rf "$MIG/qdrant_storage.new"
-  if $SUDO cp -a "$SRC" "$MIG/qdrant_storage.new"; then
-    [ -d "$MIG/qdrant_storage" ] && $SUDO mv "$MIG/qdrant_storage" "$MIG/qdrant_storage.old" && $SUDO rm -rf "$MIG/qdrant_storage.old"
-    $SUDO mv "$MIG/qdrant_storage.new" "$MIG/qdrant_storage"; log "   qdrant_storage copied"
-  else log "   !! qdrant copy FAILED -- drive keeps the previous index"; fi
-  docker start aic2026-qdrant-siglip-alpha-1 aic2026-siglip_alpha-1 >/dev/null
-  until curl -s -m 3 localhost:6333/readyz >/dev/null 2>&1; do sleep 3; done
-  log "   Qdrant back up"
+  # Qdrant index, copied LIVE (search keeps running). Qdrant only rewrites files
+  # on ingest or when its optimizer merges/indexes segments, so: wait until every
+  # collection is green with the optimizer idle, copy, and confirm the source did
+  # not change during the copy; if it did, re-sync just the changed files.
+  SRC=$(envval QDRANT_STORAGE_HOST_PATH); DST="$MIG/qdrant_storage.new"
+  idle(){ curl -s localhost:6333/collections | jq -r '.result.collections[].name' | while read -r c; do
+            curl -s "localhost:6333/collections/$c" | jq -r '"\(.result.status) \(.result.optimizer_status)"'; done | grep -vc '^green ok$'; }
+  until [ "$(idle)" = 0 ]; do log "   waiting for Qdrant to finish optimizing"; sleep 60; done
+  sig(){ $SUDO find "$SRC" -type f -printf '%P %s %T@\n' | sort | md5sum; }
+  ok=0
+  for pass in 1 2 3; do
+    before=$(sig); $SUDO rsync -a --delete "$SRC/" "$DST/"; after=$(sig)
+    [ "$before" = "$after" ] && { ok=1; break; }
+    log "   index changed during pass $pass -- re-syncing the changed files"
+  done
+  if [ "$ok" = 1 ]; then
+    [ -d "$MIG/qdrant_storage" ] && $SUDO mv "$MIG/qdrant_storage" "$MIG/qdrant_storage.old"
+    $SUDO mv "$DST" "$MIG/qdrant_storage" && $SUDO rm -rf "$MIG/qdrant_storage.old"
+    log "   qdrant_storage copied (consistent, no downtime)"
+  else log "   !! index kept changing -- drive keeps its previous index; re-run 'state' later"; fi
 
   # model cache: add what's new since the last bundle (e.g. the s2t models), keep the rest
   $SUDO cp -a -n "$(envval MODEL_CACHE_HOST_PATH)/." "$MIG/hf_cache/" && log "   hf_cache synced"

@@ -77,5 +77,5 @@ Full check, like a person using it: `python3 tools/ui_check.py` (needs
 
 ```bash
 bash handover/bundle.sh data    # dataset + videos (additive, any time)
-bash handover/bundle.sh state   # index + images + node_modules + repo + MANIFEST (stops Qdrant ~5 min)
+bash handover/bundle.sh state   # index + images + node_modules + repo + MANIFEST (live: nothing is stopped)
 ```
