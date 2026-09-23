@@ -137,8 +137,11 @@ export function rowsFromCsv(text, mode) {
   return { rows: out, detected }
 }
 
-/** Live rule check shown above the grid. */
-export function rowSummary(rows, mode) {
+/** Live rule check shown above the grid. `expectedEventCount`, when set, is
+ *  how many events the TRAKE query actually asks for — checked per row rather
+ *  than just against each other, since rows can agree with one another and
+ *  still all be wrong. */
+export function rowSummary(rows, mode, expectedEventCount) {
   const parts = [`${rows.length} row${rows.length === 1 ? '' : 's'}`]
   let warn = false
   if (rows.length > MAX_ROWS) {
@@ -151,17 +154,26 @@ export function rowSummary(rows, mode) {
     if (missing) { parts.push(`${missing} without an answer`); warn = true }
     if (tooLong) { parts.push(`${tooLong} over ${MAX_ANSWER} chars`); warn = true }
   } else if (mode === 'trake') {
-    const counts = new Set(rows.map((r) => r.frame_ids.length))
-    if (counts.size > 1) {
-      parts.push(`mixed event counts (${[...counts].sort((a, b) => a - b).join(', ')})`)
-      warn = true
-    } else if (counts.size === 1) parts.push(`${[...counts][0]} events per row`)
+    const target = Number(expectedEventCount) || null
+    if (target) {
+      const mismatched = rows.filter((r) => r.frame_ids.length !== target).length
+      if (mismatched) {
+        parts.push(`${mismatched} not matching the ${target}-event query`)
+        warn = true
+      } else if (rows.length) parts.push(`all rows match the ${target}-event query`)
+    } else {
+      const counts = new Set(rows.map((r) => r.frame_ids.length))
+      if (counts.size > 1) {
+        parts.push(`mixed event counts (${[...counts].sort((a, b) => a - b).join(', ')})`)
+        warn = true
+      } else if (counts.size === 1) parts.push(`${[...counts][0]} events per row`)
+    }
   }
   return { text: parts.join(' · '), warn }
 }
 
 /** Returns { csv, problems }. Caller decides whether to proceed. */
-export function buildSubmissionCsv(rows, mode) {
+export function buildSubmissionCsv(rows, mode, expectedEventCount) {
   const problems = []
   const lines = []
   rows.forEach((result, i) => {
@@ -183,11 +195,20 @@ export function buildSubmissionCsv(rows, mode) {
     }
   })
   if (mode === 'trake') {
-    const counts = new Set(rows.map((r) => r.frame_ids.length))
-    if (counts.size > 1) {
-      problems.push(
-        `Rows have different event counts (${[...counts].sort((a, b) => a - b).join(', ')}); every row must match the number of events the query asks for`,
-      )
+    const target = Number(expectedEventCount) || null
+    if (target) {
+      rows.forEach((r, i) => {
+        if (r.frame_ids.length !== target) {
+          problems.push(`Row ${i + 1}: has ${r.frame_ids.length} events, the query expects ${target}`)
+        }
+      })
+    } else {
+      const counts = new Set(rows.map((r) => r.frame_ids.length))
+      if (counts.size > 1) {
+        problems.push(
+          `Rows have different event counts (${[...counts].sort((a, b) => a - b).join(', ')}); every row must match the number of events the query asks for`,
+        )
+      }
     }
   }
   // CRLF, no BOM, no header.

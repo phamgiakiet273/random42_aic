@@ -11,6 +11,9 @@ const DEFAULTS = {
   // Frames marked off the video player, pending insertion as a TRAKE row.
   marks: [],
   markVideo: '',
+  // How many events the current TRAKE query asks for; null = not checked.
+  // Set by hand since nothing in the CSV format carries it.
+  expectedEventCount: null,
 }
 
 export const useResultStore = create((set, get) => ({

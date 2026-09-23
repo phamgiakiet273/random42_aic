@@ -130,6 +130,19 @@ export const useSubmissionStore = create((set, get) => ({
   removeTrakeFrame: (frame) =>
     set((s) => ({ trake: s.trake.filter((t) => t.frame !== frame) })),
 
+  /** Load a whole temporal-search chain as the TRAKE sequence, in the chain's
+   *  own event order (NOT re-sorted by frame number, unlike addTrakeFrame) —
+   *  that order is what the backend already matched the query's events to.
+   *  Replaces any work-in-progress sequence, same as switching video does. */
+  loadTrakeChain(video, frameIds) {
+    const trake = frameIds.map((frame) => ({ video, frame }))
+    set({
+      mode: 'trake',
+      trake,
+      last: { kind: 'info', text: `TRAKE loaded: ${video} [${frameIds.join(',')}]` },
+    })
+  },
+
   addTrakeFrame(record) {
     const video = record.video_name
     const frame = parseInt(record.keyframe_id, 10)

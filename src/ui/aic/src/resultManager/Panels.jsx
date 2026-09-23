@@ -35,7 +35,7 @@ function PositionPicker({ pos }) {
 }
 
 export function ModeBar() {
-  const { mode, setMode } = useResultStore()
+  const { mode, setMode, expectedEventCount, update } = useResultStore()
   return (
     <div className="flex items-center gap-3 flex-wrap">
       <div className="join">
@@ -50,6 +50,17 @@ export function ModeBar() {
         ))}
       </div>
       <span className="text-xs text-base-content/60 font-mono">{MODE_HINT[mode]}</span>
+      {mode === 'trake' && (
+        <label className="flex items-center gap-1 text-xs" title="How many events this TRAKE query asks for — checks every row against it, not just against each other">
+          Expects
+          <input
+            type="number" min={1} className="input input-xs input-bordered w-16"
+            placeholder="any" value={expectedEventCount ?? ''}
+            onChange={(e) => update({ expectedEventCount: e.target.value ? Number(e.target.value) : null })}
+          />
+          events
+        </label>
+      )}
     </div>
   )
 }

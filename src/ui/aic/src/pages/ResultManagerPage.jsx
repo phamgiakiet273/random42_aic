@@ -25,13 +25,13 @@ function Section({ title, children }) {
 
 export default function ResultManagerPage() {
   const store = useResultStore()
-  const { rows, mode, selected, thumbnailSize, filename } = store
+  const { rows, mode, selected, thumbnailSize, filename, expectedEventCount } = store
   const [previewIndex, setPreviewIndex] = useState(null)
   const [dragging, setDragging] = useState(null)
   const [dragOver, setDragOver] = useState(null)
   const [notice, setNotice] = useState(null)
 
-  const summary = rowSummary(rows, mode)
+  const summary = rowSummary(rows, mode, expectedEventCount)
   const previewRow = previewIndex != null ? rows[previewIndex] : null
 
   const { data: previewFps } = useQuery({
@@ -68,7 +68,7 @@ export default function ResultManagerPage() {
       if (!window.confirm(`A submission CSV may hold at most ${MAX_ROWS} rows; this has ${rows.length}.\n\nExport only the first ${MAX_ROWS}?`)) return
       out = rows.slice(0, MAX_ROWS)
     }
-    const { csv, problems } = buildSubmissionCsv(out, mode)
+    const { csv, problems } = buildSubmissionCsv(out, mode, expectedEventCount)
     if (problems.length) {
       const shown = problems.slice(0, 10).join('\n')
       const more = problems.length > 10 ? `\n...and ${problems.length - 10} more` : ''
@@ -150,6 +150,7 @@ export default function ResultManagerPage() {
                   onToggle={store.toggleSelected}
                   onPreview={setPreviewIndex}
                   onAnswer={(idx, answer) => store.updateRow(idx, { answer })}
+                  onUpdateFrames={(idx, frame_ids) => store.updateRow(idx, { frame_ids })}
                   onDragStart={setDragging}
                   onDragOver={setDragOver}
                   onDrop={(to) => { if (dragging != null && dragging !== to) store.moveRow(dragging, to) }}
