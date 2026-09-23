@@ -29,7 +29,7 @@ import numpy as np
 from src.common.schemas.api import APIResponse
 from src.externals.qdrant_client import QdrantSearchClient
 from src.modules.vector_search.fusion import preprocessing_image, preprocessing_text
-from src.modules.vector_search.region_fusion import augment_with_regions
+from src.modules.vector_search.region_fusion import augment_with_regions, video_only_filter
 from src.utils.logger import get_logger
 from src.utils.metadata import bytes_to_pil_image
 from src.utils.settings import get_settings
@@ -195,7 +195,11 @@ class ClipSearchService:
             sort_to_news=sort_to_news,
             return_s2t=return_s2t,
         )
-        result = augment_with_regions(self.qdrant, feat, result, video_filter or "", k)
+        result = augment_with_regions(
+            self.qdrant, feat, result, k,
+            frame_filter=self.qdrant._build_filter(video_filter or "", s2t_filter, frame_class_filter or [], skip_frames or []),
+            region_filter=video_only_filter(video_filter),
+        )
         logger.info(f"Text search completed with query {text!r}")
         result = self._add_paths(result)
         return APIResponse(status=HTTPStatus.OK.value, message="Success", data=result)
@@ -231,7 +235,11 @@ class ClipSearchService:
             sort_to_news=sort_to_news,
             return_s2t=return_s2t,
         )
-        result = augment_with_regions(self.qdrant, feat, result, video_filter or "", k)
+        result = augment_with_regions(
+            self.qdrant, feat, result, k,
+            frame_filter=self.qdrant._build_filter(video_filter or "", s2t_filter, frame_class_filter or [], skip_frames or []),
+            region_filter=video_only_filter(video_filter),
+        )
         logger.info("Image search completed")
         result = self._add_paths(result)
         return APIResponse(status=HTTPStatus.OK.value, message="Success", data=result)

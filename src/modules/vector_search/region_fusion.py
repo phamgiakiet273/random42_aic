@@ -5,8 +5,10 @@ At preprocess we embedded object crops of the N frames into a sibling collection
 frame carries in the main collection, plus the crop's bbox/label/conf.
 
 Live path: search the region collection with the SAME text/image vector, group
-hits by parent frame, pull those parent frame records, and fuse them into the
-normal frame results. A "red bus" query then matches the bus *crop* even when the
+hits by parent frame, pull those parent frame records THROUGH THE FRAME SEARCH'S
+OWN FILTER (so crop-found frames obey the video/transcript/frame-class/skip
+filters too), and fuse them into the normal frame results. Used by text, image
+and temporal search (every event of a temporal query). A "red bus" query then matches the bus *crop* even when the
 whole-frame embedding missed it. All offline-precomputed; this only adds one
 vector search + one batch retrieve, so the live path stays in milliseconds.
 
@@ -49,8 +51,8 @@ def _ready(client) -> bool:
     return _state["ready"]
 
 
-def _video_only_filter(video_filter):
-    """OR-match on video_name only (region points lack s2t/frame_class/is_unique)."""
+def video_only_filter(video_filter):
+    """Crop-search filter: OR-match on video_name (the only frame field crops carry)."""
     if video_filter in ("", None, []):
         return None
     if isinstance(video_filter, str):
@@ -59,6 +61,11 @@ def _video_only_filter(video_filter):
         models.FieldCondition(key="video_name", match=models.MatchText(text=v))
         for v in video_filter
     ])
+
+
+def parent_ids_filter(ids):
+    """Crop-search filter: only crops of these frames (temporal neighbour events)."""
+    return models.Filter(must=[models.FieldCondition(key="parent_id", match=models.MatchAny(any=[int(i) for i in ids]))])
 
 
 def _record_from_payload(pid, payload, score):
@@ -78,12 +85,15 @@ def _record_from_payload(pid, payload, score):
     }
 
 
-def augment_with_regions(qdrant, feat, frame_result, video_filter, k):
+def augment_with_regions(qdrant, feat, frame_result, k, frame_filter=None, region_filter=None):
     """Fuse region-crop hits into `frame_result`. Returns a (re-ranked) list.
 
     `qdrant` is the QdrantSearchClient wrapping the MAIN collection (we reuse its
-    raw `.client`). No-op unless the main collection is PUMPKING_SIGLIP_V2 and the
-    region collection exists.
+    raw `.client`). `frame_filter` is the filter the frame search itself used:
+    parent frames are fetched through it, so a frame reached via a crop can't
+    bypass a filter. `region_filter` narrows the crop search (video_only_filter /
+    parent_ids_filter). No-op unless the main collection is PUMPKING_SIGLIP_V2
+    and the region collection exists.
     """
     try:
         if getattr(qdrant, "collection_name", None) != MAIN_COLLECTION:
@@ -96,7 +106,7 @@ def augment_with_regions(qdrant, feat, frame_result, video_filter, k):
         hits = client.query_points(
             collection_name=REGION_COLLECTION,
             query=query,
-            query_filter=_video_only_filter(video_filter),
+            query_filter=region_filter,
             limit=REGION_K,
         ).points
         if not hits:
@@ -115,7 +125,9 @@ def augment_with_regions(qdrant, feat, frame_result, video_filter, k):
                                       "conf": p.get("conf"), "score": float(h.score)})
 
         parent_ids = list(by_parent)
-        recs = client.retrieve(MAIN_COLLECTION, ids=parent_ids, with_payload=True)
+        must = [models.HasIdCondition(has_id=parent_ids)] + ([frame_filter] if frame_filter else [])
+        recs, _ = client.scroll(MAIN_COLLECTION, scroll_filter=models.Filter(must=must),
+                                limit=len(parent_ids), with_payload=True, with_vectors=False)
         region_records = {}
         for r in recs:
             slot = by_parent[int(r.id)]

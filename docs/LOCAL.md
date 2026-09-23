@@ -5,12 +5,20 @@ else (UI, search, DRES submission, video) to the server's ngrok URL
 `https://hallie-sabulous-nicholle.ngrok-free.dev`.
 No bun, no conda, no UI build, no DRES login on your machine.
 
+**Fallback, zero setup:** if your nginx won't run (or dies mid-task), open
+<https://hallie-sabulous-nicholle.ngrok-free.dev> directly. Same UI, same search,
+same team DRES session. The only difference is that every keyframe comes from the
+server, so thumbnails load slower. Switching loses what's only on the page
+(unsent TRAKE marks, settings), exactly like a reload.
+
 ## 1. Keyframes
 
-A folder that contains `0/` (batch 0, as before) and ideally `1/` (batch 1):
+A folder that contains `0/` (batch 0, as before) and `1/` (batch 1). Both come as
+tarballs from the server's `E:\workspace\AIC_2026\data\`:
 
 ```bash
-tar -xf 1_frames_low_res_autoshot.tar -C <that folder>   # server F:, ~3 GB; N + S only (no M)
+tar -xf 0.tar -C <that folder>   # 2.9 GB, batch 0 (L)
+tar -xf 1.tar -C <that folder>   # 7.6 GB, batch 1: N + S + M (603,703 keyframes)
 ```
 
 Frames you don't have load from the server instead (slower), so a partial copy works.
@@ -50,7 +58,7 @@ curl localhost:9080/submission/get_session_and_eval   # "status":200 = team DRES
 |---|---|
 | `ERR_NGROK_3200` / nothing loads | Server tunnel is down: ask the server owner to run `./stack.sh start --remote` |
 | Thumbnails slow or broken | Wrong frames folder: it must CONTAIN `0/`. (B) keep the trailing `/` in `alias`; (A) check `AIC_FRAMES` |
-| Bundled nginx won't start (macOS, missing `libpcre`) | Use A (Docker) or brew nginx |
+| Bundled nginx won't start (macOS, missing `libpcre`) | Use A (Docker) or brew nginx; right now: open the ngrok URL directly |
 | Port 9080 busy | Change `listen 9080` in the conf (and `ports` in the compose file) |
 | DRES badge red | Hover it: "no ACTIVE evaluation" is normal until BTC opens one |
 | ngrok down, SSH works | Set `$aic_server` to `http://127.0.0.1:9090` (Docker: `http://host.docker.internal:9090`) + `ssh -L 9090:localhost:9090 <server>` |

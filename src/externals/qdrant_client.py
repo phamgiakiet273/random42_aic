@@ -17,6 +17,11 @@ from qdrant_client.models import Distance, HnswConfigDiff, PointStruct, VectorPa
 from tqdm import tqdm
 
 from src.modules.vector_search.fusion import merge_scores, merge_scores_reverse
+from src.modules.vector_search.region_fusion import (
+    augment_with_regions,
+    parent_ids_filter,
+    video_only_filter,
+)
 from src.utils.logger import get_logger
 from src.utils.settings import get_settings
 
@@ -298,7 +303,6 @@ class QdrantSearchClient:
                                 if isinstance(s2t_map, dict)
                                 else "",
                                 "is_unique": not unique[str(frm)],
-                                "object": [],
                                 "frame_class": shot[frame_list[idx]][0]
                                 if shot != ""
                                 else 2,
@@ -489,6 +493,11 @@ class QdrantSearchClient:
         return_result = self._format_search_results(
             search_results, return_s2t=return_s2t
         )
+        # CCTV crops: a frame whose OBJECT matches the event counts too.
+        return_result = augment_with_regions(
+            self, query_list[query_main], return_result, int(k) * query_len,
+            frame_filter=query_filter, region_filter=video_only_filter(video_filter),
+        )
         search_results = [[result] for result in return_result]
         previous_search_results = search_results
 
@@ -521,6 +530,10 @@ class QdrantSearchClient:
 
             return_result = self._format_search_results(
                 search_results, return_s2t=return_s2t
+            )
+            return_result = augment_with_regions(
+                self, query_list[query_idx], return_result, int(k) * (query_len - query_main + query_idx),
+                frame_filter=filter_results, region_filter=parent_ids_filter(id_condition),
             )
             search_results = merge_scores_reverse(
                 return_result, previous_search_results
@@ -556,6 +569,10 @@ class QdrantSearchClient:
 
             return_result = self._format_search_results(
                 search_results, return_s2t=return_s2t
+            )
+            return_result = augment_with_regions(
+                self, query, return_result, int(k) * (len(query_list) + query_main - query_idx),
+                frame_filter=filter_results, region_filter=parent_ids_filter(id_condition),
             )
             search_results = merge_scores(previous_search_results, return_result)
             previous_search_results = search_results

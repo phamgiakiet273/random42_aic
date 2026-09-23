@@ -104,6 +104,21 @@ do_start() {
     wait_http "ngrok  https://$dom" "https://$dom/gateway/ping" 90
   fi
   do_verify
+  [ -n "$remote" ] && verify_public "$dom"
+}
+
+# The public URL is also the teammates' zero-setup fallback (open it in a browser),
+# so check what a browser there needs: UI, search API, a keyframe, DRES status.
+verify_public() {
+  local dom=$1 u="https://$1" code probe
+  head_ "verify public URL (teammate fallback)"
+  for probe in "/:200" "/hub/ping:200" \
+      "/media/frames/0/frames/low_res_autoshot/Keyframes_L21/keyframes/L21_V001/00000.avif:200"; do
+    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$u${probe%:*}")
+    [ "$code" = "${probe##*:}" ] && ok "$dom${probe%:*}" || bad "$dom${probe%:*} -> $code"
+  done
+  code=$(curl -s --max-time 30 "$u/submission/get_session_and_eval" | jq -r '.status' 2>/dev/null)
+  [ "$code" = "200" ] && ok "$dom/submission (team DRES session)" || bad "$dom/submission -> status '$code'"
 }
 
 do_verify() {
