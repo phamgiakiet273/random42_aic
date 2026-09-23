@@ -121,7 +121,7 @@ are slower (~1.4 MB per results page). Switching loses what's only on the page
 | Port 9080 busy | Change `listen 9080` in the conf (and `ports` in the compose file) |
 | A 2026 video missing from the video picker | Tick **Batch 1** in Filters (on by default) |
 | No traffic-cam / cycling results | Tick **Traffic CCTV** / **Cycling** under Content (off by default) |
-| ngrok down, SSH works | Set `$aic_server` to `http://127.0.0.1:9090` (Docker: `http://host.docker.internal:9090`) + `ssh -L 9090:localhost:9090 <server>` |
+| ngrok down | Over Tailscale (be on the team tailnet): set `$aic_server` to `http://100.98.145.10:9090` and reload. Use the IP — the conf resolves names via public DNS, which can't see MagicDNS names. No SSH needed |
 
 ---
 
@@ -134,6 +134,9 @@ python3 tools/ui_check.py https://$NGROK_DOMAIN   # real browser, every UI featu
 ```
 
 - ngrok settings: `NGROK_AUTHTOKEN`, `NGROK_DOMAIN` in `.env` (gitignored).
+- Tailscale fallback: this machine's WSL is tailnet node `desktop-bk06bou-1`
+  (`100.98.145.10`); the gateway listens on all interfaces, so teammates reach
+  `http://100.98.145.10:9090` directly when ngrok is down (no SSH server here).
 - Only 9090 is published. Qdrant (6333/6335) never — it has no auth.
   `setup_database` is refused at the gateway (it would destroy the index).
 - After Docker Desktop is paused/resumed, containers can lose their host port

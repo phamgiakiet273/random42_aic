@@ -34,8 +34,8 @@ http {
     server {
         listen 9080;
 
-        # The server's gateway. If ngrok is down: "http://127.0.0.1:9090" plus
-        # `ssh -L 9090:localhost:9090 <server>`.
+        # The server's gateway. If ngrok is down and you are on the team tailnet:
+        # "http://100.98.145.10:9090" (the IP: the resolver below can't see MagicDNS).
         set $aic_server "https://hallie-sabulous-nicholle.ngrok-free.dev";
 
         # Set here only: a location with its own proxy_set_header drops these.
