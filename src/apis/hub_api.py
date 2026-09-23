@@ -158,7 +158,11 @@ def build_router(service: HubGatewayService) -> APIRouter:
     ) -> APIResponse:
         # `subset` (e.g. "news", "traffic") folds its content-code prefixes into
         # video_filter so a search is scoped to one content type via the DB.
-        video_filter = merge_video_filter(subset, video_filter)
+        # Not for scroll: it addresses exact videos (Browse tab, and a card's
+        # "browse this shot" / "similar frames"), and the backend looks each name
+        # up as one video -- merged prefixes made it KeyError -> HTTP 500.
+        if search_type != "scroll":
+            video_filter = merge_video_filter(subset, video_filter)
         try:
             request = SearchRequest(
                 model=model,

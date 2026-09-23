@@ -15,17 +15,19 @@ The backend is 8 independently-deployable FastAPI services sharing one codebase.
 
 | SERVICE | Purpose | Default port |
 |---|---|---|
-| `hub` | Public gateway: serves the search UI, proxies queries to the other services, handles image/video redirects | 9021 |
+| `hub` | API gateway the UI calls: fans search out to the model services, media redirects, forwards `/submission` | 9021 |
 | `result_manager` | Secondary UI for reviewing/exporting results | 9022 |
 | `siglip_alpha` | SigLIP2 search backend (primary model + Qdrant collection) | 9029 |
 | `siglip_beta` | SigLIP2 search backend (second model/collection, for A/B comparison) | 9030 |
 | `metaclip` | MetaCLIP search backend (third model variant) | 9031 |
 | `rerank` | Reranks candidate frames by dominant color | 9126 |
 | `util` | Translation, neighboring-frame lookup, direct vector lookup | 9025 |
-| `submission` | DRES competition submission (KIS/QA/TRAKE) | 9024 |
+| `submission` | The team's ONE DRES client (KIS/QA/TRAKE): one session, duplicate guard; see `docs/SUBMISSION_SPEC.md` | 9024 |
 
-`hub` is the only service end users hit directly; it fans out to the rest over HTTP using each service's
-`*_HOST_PUBLIC` URL (see `.env.example`). A `media_server` (nginx) container serves keyframe images/video files.
+**The UI is the React app in `src/ui/aic`**, served by the `frontend` container on **:10000** (this machine)
+and, built, by the `gateway` nginx on **:9090** = the public ngrok URL for teammates (`docs/LOCAL.md`). The
+hub's own Jinja UI on :9021 is retired. The browser only talks to one origin, which proxies `/hub`,
+`/submission`, `/result_manager` and `/media` (keyframes + video from the `media_server` nginx, :9027).
 
 ```
 src/
@@ -35,7 +37,8 @@ src/
   externals/       Thin clients for external systems: Qdrant, DRES, Google Translate
   common/schemas/  Pydantic request/response models shared across routers
   utils/           Settings, logging, path/frame helpers
-  ui/              Jinja2 templates + static assets for hub and result_manager
+  ui/aic/          THE UI: React + Vite app (dev server :10000; `./stack.sh ui-build` -> dist/ for the gateway)
+  ui/templates,static  legacy Jinja UI (retired)
   pre_processing/  Offline pipeline: shot detection, feature extraction, VLM captioning, etc.
                    (not part of the live app — run these manually to (re)build a dataset index)
   main.py          Generic launcher; SERVICE env var selects which of the 8 apps to build & run
@@ -56,16 +59,22 @@ cp .env.example .env
 # (+ NGROK_AUTHTOKEN / NGROK_DOMAIN for `./stack.sh start --remote`: teammates, docs/LOCAL.md)
 ```
 
-### Docker (recommended)
+### Docker (recommended): `./stack.sh`
 
-The two compose files split by workload, not by environment:
+```bash
+./stack.sh start            # server stack + hub + UI, preflight + full verify   -> http://localhost:10000
+./stack.sh start --remote   # ... + gateway + ngrok tunnel (public URL for teammates)
+./stack.sh verify | status | stop | restart | ui-build
+python3 tools/ui_check.py [url]   # drive the real UI in a browser, every feature (Playwright)
+```
+
+`stack.sh` is the supported way to run it; the compose files underneath split by workload:
 
 - **`docker-compose-server.yml`** — everything heavy: `siglip_alpha`/`siglip_beta`/`metaclip` (GPU), the 3
   Qdrant instances, `rerank`/`util`/`submission`/`result_manager`, and the `media_server` (nginx, serves
   keyframe images/video). Runs on a machine with an NVIDIA GPU.
-- **`docker-compose-local.yml`** — just the `hub` gateway. A lightweight CPU-only container you run wherever
-  you want the public-facing UI; it talks to the services above over the network via the `*_HOST_PUBLIC` /
-  `NGINX_*_HOST` URLs in `.env`.
+- **`docker-compose-local.yml`** — the `hub` + the `frontend` (UI on :10000), on the same machine.
+- **`docker-compose-gateway.yml`** — the public `gateway` nginx (:9090) + its `ngrok` tunnel.
 
 ```bash
 # on the GPU server
@@ -99,11 +108,11 @@ pip install -r requirements.txt
 SERVICE=siglip_alpha uvicorn src.main:app --port 9029
 ```
 
-When running the complete server stack, Qdrant starts empty. After the dataset and
-feature files are mounted under `./data`, call each enabled model service's
-`setup_database` endpoint to create and ingest its collection before attempting a search.
+The Qdrant index is **restored from disk** (`QDRANT_STORAGE_HOST_PATH`, a fast local ext4 disk) — it is
+built once by the batch pipeline, not at startup. **Never call `GET /{model}/setup_database` on a built
+index**: it re-ingests and destroys the collection (the public gateway refuses it).
 
-Open `http://localhost:9021` for the search UI.
+Open **http://localhost:10000** for the UI (public: `https://$NGROK_DOMAIN` after `./stack.sh start --remote`).
 
 ## Pre-processing pipeline
 
