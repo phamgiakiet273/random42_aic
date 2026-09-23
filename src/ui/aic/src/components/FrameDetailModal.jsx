@@ -8,24 +8,39 @@ import {
   formatTimecode,
   videoStem,
 } from '../api/media'
-import { useTrakeStore } from '../stores/trakeStore'
+import { useSubmissionStore } from '../stores/submissionStore'
+import { useResultStore } from '../resultManager/store'
 import { useSettingsStore } from '../stores/settingsStore'
 import SubmitButton from './SubmitButton'
 
 // `urls` overrides the media-config-derived URLs. The result manager needs it:
 // a row read from a submission CSV has no batch, so its media has to be
 // resolved by the result_manager service instead of composed in the browser.
-export default function FrameDetailModal({ record, mediaConfig, urls, onClose }) {
+//
+// `markMode` picks where frames marked here go. Both targets are ordered
+// single-video frame sequences; they differ only in what happens next:
+//   'dres' - the live TRAKE sequence the submission bar sends to DRES
+//   'csv'  - the result manager's marks, which become a TRAKE row in the CSV
+export default function FrameDetailModal({
+  record,
+  mediaConfig,
+  urls,
+  markMode = 'dres',
+  onClose,
+}) {
   const dialogRef = useRef(null)
   const videoRef = useRef(null)
   const currentNeighborRef = useRef(null)
   const [currentFrame, setCurrentFrame] = useState(null)
   const neighborCount = useSettingsStore((s) => s.neighborFrameCount)
 
-  const trakeVideoId = useTrakeStore((s) => s.videoId)
-  const trakeFrames = useTrakeStore((s) => s.frames)
-  const markFrame = useTrakeStore((s) => s.markFrame)
-  const removeFrame = useTrakeStore((s) => s.removeFrame)
+  const trake = useSubmissionStore((s) => s.trake)
+  const addTrakeFrame = useSubmissionStore((s) => s.addTrakeFrame)
+  const removeTrakeFrame = useSubmissionStore((s) => s.removeTrakeFrame)
+  const csvMarks = useResultStore((s) => s.marks)
+  const csvMarkVideo = useResultStore((s) => s.markVideo)
+  const addCsvMark = useResultStore((s) => s.addMark)
+  const removeCsvMark = useResultStore((s) => s.removeMark)
 
   const videoName = record ? videoStem(record.video_name) : null
   // Do NOT silently fall back to 25. fps varies across the dataset (950 videos
@@ -82,6 +97,18 @@ export default function FrameDetailModal({ record, mediaConfig, urls, onClose })
     [fps],
   )
 
+  const isDres = markMode === 'dres'
+
+  // The marked frame comes from playback time (frame = seconds * fps), so an
+  // unknown fps would record a frame number that looks right and is not.
+  const markCurrentFrame = useCallback(() => {
+    if (!record || !fpsKnown) return
+    const seconds = videoRef.current?.currentTime ?? startSeconds ?? 0
+    const frame = Math.round(seconds * fps)
+    if (isDres) addTrakeFrame({ video_name: record.video_name, keyframe_id: frame, fps })
+    else addCsvMark(record.video_name, frame)
+  }, [record, fpsKnown, fps, startSeconds, isDres, addTrakeFrame, addCsvMark])
+
   useEffect(() => {
     const dialog = dialogRef.current
     if (!dialog || !record) return
@@ -92,13 +119,29 @@ export default function FrameDetailModal({ record, mediaConfig, urls, onClose })
       } else if (e.key === 'ArrowRight') {
         e.preventDefault()
         nudge(e.shiftKey ? 1 : 1 / fps)
+      } else if (e.key.toLowerCase() === 'm') {
+        e.preventDefault()
+        markCurrentFrame()
       }
     }
+    // Scoped to the dialog rather than the window: the shortcut only makes
+    // sense while the player is open, and the dialog is modal, so it holds
+    // focus. This also means one handler serves both pages.
     dialog.addEventListener('keydown', onKeyDown)
     return () => dialog.removeEventListener('keydown', onKeyDown)
-  }, [record, fps, nudge])
+  }, [record, fps, nudge, markCurrentFrame])
 
-  const markedHere = trakeVideoId === videoName ? trakeFrames : []
+  // Marks for THIS video, read from whichever target the page chose. Both
+  // targets restart the sequence when the video changes, so a list that belongs
+  // to another video is simply not shown here.
+  const markedHere = isDres
+    ? trake.filter((t) => t.video === record?.video_name).map((t) => t.frame)
+    : csvMarkVideo === videoName
+      ? csvMarks
+      : []
+
+  const unmarkFrame = (frame) => (isDres ? removeTrakeFrame(frame) : removeCsvMark(frame))
+
   const transcript = Array.isArray(record?.s2t) ? record.s2t.join(' ') : ''
 
   // The clicked frame sits between its neighbours rather than being absent, so
@@ -145,7 +188,10 @@ export default function FrameDetailModal({ record, mediaConfig, urls, onClose })
               record={{
                 video_name: record.video_name,
                 keyframe_id: currentFrame ?? record.keyframe_id,
-                fps,
+                // The real fps, not the display fallback: passing 25 here would
+                // hide an unknown fps from the button's own guard, and the
+                // scrubbed frame number was derived from that same fallback.
+                fps: fpsKnown ? fps : null,
               }}
               label
             />
@@ -238,8 +284,12 @@ export default function FrameDetailModal({ record, mediaConfig, urls, onClose })
               <button
                 type="button"
                 className="btn btn-sm btn-outline"
-                onClick={() =>
-                  markFrame(videoName, fps, Math.round((videoRef.current?.currentTime ?? startSeconds ?? 0) * fps))
+                onClick={markCurrentFrame}
+                disabled={!fpsKnown}
+                title={
+                  fpsKnown
+                    ? 'Mark the frame showing now (M)'
+                    : "Unavailable: this video's fps is unknown, so the current frame number cannot be computed"
                 }
               >
                 Mark current frame
@@ -251,7 +301,7 @@ export default function FrameDetailModal({ record, mediaConfig, urls, onClose })
                   <li key={frameId} className="badge badge-lg gap-2">
                     {frameId}
                     <span className="text-xs opacity-60">{formatTimecode(frameId / fps)}</span>
-                    <button type="button" onClick={() => removeFrame(frameId)} aria-label={`Remove frame ${frameId}`}>
+                    <button type="button" onClick={() => unmarkFrame(frameId)} aria-label={`Remove frame ${frameId}`}>
                       ✕
                     </button>
                   </li>
@@ -259,8 +309,11 @@ export default function FrameDetailModal({ record, mediaConfig, urls, onClose })
               </ul>
             )}
             <p className="text-xs text-base-content/50 mt-2">
-              Kept for TRAKE submission, which is not wired up yet (doc comment [b]
-              defers it to the finals). The TRAKE CSV export has been removed.
+              {!fpsKnown
+                ? "Marking is off for this video: its fps is unknown, so a frame number taken from playback time would be wrong."
+                : isDres
+                  ? 'Press M while the video plays. Marks form the TRAKE sequence in the submission bar, which submits them to DRES.'
+                  : 'Press M while the video plays. Marks become one TRAKE row via "Add as TRAKE row" in the Marked frames panel.'}
             </p>
           </div>
 

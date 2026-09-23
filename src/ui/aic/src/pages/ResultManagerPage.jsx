@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useResultStore } from '../resultManager/store'
@@ -30,7 +30,6 @@ export default function ResultManagerPage() {
   const [dragging, setDragging] = useState(null)
   const [dragOver, setDragOver] = useState(null)
   const [notice, setNotice] = useState(null)
-  const fileRef = useRef(null)
 
   const summary = rowSummary(rows, mode)
   const previewRow = previewIndex != null ? rows[previewIndex] : null
@@ -42,19 +41,8 @@ export default function ResultManagerPage() {
     retry: false,
   })
 
-  // "M" marks the frame currently showing in the preview video.
-  useEffect(() => {
-    if (!previewRow) return
-    const onKey = (e) => {
-      if (e.key.toLowerCase() !== 'm') return
-      const video = document.querySelector('dialog[open] video')
-      if (!video) return
-      const fps = previewFps || 25
-      store.addMark(previewRow.video_name, Math.round(video.currentTime * fps))
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [previewRow, previewFps, store])
+  // Marking ("M" / the modal's Mark button) lives in FrameDetailModal, which
+  // owns the player and refuses to mark when fps is unknown.
 
   async function handleUpload(file, insertIndex) {
     const text = await file.text()
@@ -130,7 +118,7 @@ export default function ResultManagerPage() {
                 onChange={(e) => store.update({ thumbnailSize: Number(e.target.value) })} />
             </label>
             <span className="flex-1" />
-            <input ref={fileRef} className="input input-sm input-bordered w-44"
+            <input className="input input-sm input-bordered w-44"
               value={filename} onChange={(e) => store.update({ filename: e.target.value })} />
             <span className="text-xs text-base-content/50">-{mode}.csv</span>
             <button type="button" className="btn btn-sm btn-primary" onClick={handleDownload}>
@@ -188,6 +176,7 @@ export default function ResultManagerPage() {
           frame: resultFrameUrl(previewRow.video_name, previewRow.frame_ids[0]),
           video: resultVideoUrl(previewRow.video_name),
         }}
+        markMode="csv"
         onClose={() => setPreviewIndex(null)}
       />
     </main>

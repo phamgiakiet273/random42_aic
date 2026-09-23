@@ -3,11 +3,20 @@
 // (no-extension) name server-side; the UI just sends the internal video_name.
 import { API_BASE_URL, ApiError } from './client'
 
-/** Frame's time in the original video, ms: round(frame_idx / fps * 1000). */
+/** True when `fps` is usable. fps varies across the dataset (950 videos at 25,
+ *  359 at 30, 30 at 29.97, plus a drifting tail), so a default is never safe. */
+export function isFpsKnown(fps) {
+  const r = parseFloat(fps)
+  return Number.isFinite(r) && r > 0
+}
+
+/** Frame's time in the original video, ms: round(frame_idx / fps * 1000).
+ *  Returns null when fps is unknown: the old `|| 1` fallback turned a missing
+ *  fps into a timestamp 25-30x too large and submitted it as a real answer. */
 export function frameTimeMs(frameId, fps) {
+  if (!isFpsKnown(fps)) return null
   const f = parseInt(frameId, 10) || 0
-  const r = parseFloat(fps) || 1
-  return Math.round((f / r) * 1000)
+  return Math.round((f / parseFloat(fps)) * 1000)
 }
 
 async function postJson(path, body) {

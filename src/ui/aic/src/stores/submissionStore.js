@@ -74,10 +74,23 @@ export const useSubmissionStore = create((set, get) => ({
     }
   },
 
+  /** KIS/Q&A answers are submitted as a time in ms, which only exists if the
+   *  video's fps is known. Refuse rather than send a guessed time: a wrong
+   *  submission is scored as wrong, so it costs more than not submitting. */
+  _refuseUnknownFps(video) {
+    set({
+      last: {
+        kind: 'error',
+        text: `Cannot submit ${video}: its fps is unknown, so the frame's timestamp cannot be computed.`,
+      },
+    })
+  },
+
   // KIS one-click on a result frame (video_name + keyframe_id + fps).
   submitFrameKis(record) {
     const video = record.video_name
     const ms = frameTimeMs(record.keyframe_id, record.fps)
+    if (ms == null) return get()._refuseUnknownFps(video)
     const label = `KIS ${video} @ ${ms}ms`
     return get()._submit(`KIS|${video}|${ms}`, () =>
       submitKis({ sessionId: get().sessionId, evalId: get().evalId, video, start: ms, end: ms }),
@@ -89,6 +102,7 @@ export const useSubmissionStore = create((set, get) => ({
   submitQaAnswer(record, answer) {
     const video = record.video_name
     const ms = frameTimeMs(record.keyframe_id, record.fps)
+    if (ms == null) return get()._refuseUnknownFps(video)
     const label = `QA "${answer}" ${video} @ ${ms}ms`
     return get()._submit(`QA|${answer}|${video}|${ms}`, () =>
       submitQa({ sessionId: get().sessionId, evalId: get().evalId, answer, video, time: ms }),
@@ -113,6 +127,8 @@ export const useSubmissionStore = create((set, get) => ({
   setMode: (mode) => set({ mode }),
   setQaAnswer: (qaAnswer) => set({ qaAnswer }),
   clearTrake: () => set({ trake: [] }),
+  removeTrakeFrame: (frame) =>
+    set((s) => ({ trake: s.trake.filter((t) => t.frame !== frame) })),
 
   addTrakeFrame(record) {
     const video = record.video_name

@@ -1,7 +1,7 @@
 import { Send, Plus } from 'lucide-react'
 import { useSubmissionStore } from '../stores/submissionStore'
 import { useSettingsStore } from '../stores/settingsStore'
-import { frameTimeMs } from '../api/submission'
+import { frameTimeMs, isFpsKnown } from '../api/submission'
 
 // One-click submit for a single result frame. The active task mode (KIS/QA/TRAKE,
 // from the submission bar) decides what it does:
@@ -15,6 +15,10 @@ export default function SubmitButton({ record, label = false, className = '' }) 
   const actOnFrame = useSubmissionStore((s) => s.actOnFrame)
   const busy = useSubmissionStore((s) => s.busy)
   const confirmSubmit = useSettingsStore((s) => s.confirmSubmit)
+
+  // KIS/Q&A need a timestamp, and TRAKE frame numbers picked off the player are
+  // derived from fps too, so an unknown fps blocks every mode.
+  const fpsKnown = isFpsKnown(record.fps)
 
   function onClick(e) {
     e.stopPropagation()
@@ -41,10 +45,14 @@ export default function SubmitButton({ record, label = false, className = '' }) 
       type="button"
       className={`btn btn-xs ${isTrake ? 'btn-warning' : 'btn-success'} text-white gap-1 ${className}`}
       title={
-        isTrake ? 'Add this frame to the TRAKE sequence' : `Submit this frame to DRES (${mode.toUpperCase()})`
+        !fpsKnown
+          ? 'Unavailable: this video\'s fps is unknown, so the frame time cannot be computed'
+          : isTrake
+            ? 'Add this frame to the TRAKE sequence'
+            : `Submit this frame to DRES (${mode.toUpperCase()})`
       }
       onClick={onClick}
-      disabled={busy}
+      disabled={busy || !fpsKnown}
     >
       {isTrake ? <Plus size={12} /> : <Send size={12} />}
       {label && (isTrake ? 'TRAKE+' : 'Submit')}
