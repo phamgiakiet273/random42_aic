@@ -1,0 +1,13 @@
+# Teammate machine, any OS (Linux / macOS / Windows), no local nginx needed.
+#   AIC_FRAMES=/path/to/folder-containing-0 docker compose -f docker-compose-teammate.yml up -d
+# Runbook: docs/LOCAL.md.
+name: aic2026-teammate
+services:
+  web:
+    image: nginx:alpine
+    ports: ["127.0.0.1:9080:9080"]
+    volumes:
+      - ./nginx/teammate.conf.example:/etc/nginx/teammate.conf:ro
+      - ${AIC_FRAMES:?set AIC_FRAMES to the folder that contains 0/}:/data:ro
+    command: ["nginx", "-c", "/etc/nginx/teammate.conf", "-g", "daemon off;"]
+    restart: unless-stopped
