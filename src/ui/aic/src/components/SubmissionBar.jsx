@@ -20,6 +20,7 @@ export default function SubmissionBar() {
   const submitTrakeNow = useSubmissionStore((s) => s.submitTrakeNow)
   const ready = useSubmissionStore((s) => s.ready)
   const evalId = useSubmissionStore((s) => s.evalId)
+  const evalName = useSubmissionStore((s) => s.evalName)
   const bootstrap = useSubmissionStore((s) => s.bootstrap)
   const busy = useSubmissionStore((s) => s.busy)
   const confirmSubmit = useSettingsStore((s) => s.confirmSubmit)
@@ -29,7 +30,7 @@ export default function SubmissionBar() {
     <div className="flex items-center gap-2 mr-2">
       <span
         className={`badge badge-sm ${ready ? 'badge-success text-white' : 'badge-ghost'}`}
-        title={ready ? `active evaluation ${evalId}` : 'no DRES session / active evaluation'}
+        title={ready ? `active evaluation ${evalName || ''} (${evalId})` : 'no DRES session / active evaluation'}
       >
         DRES{ready ? '' : ' ✕'}
       </span>

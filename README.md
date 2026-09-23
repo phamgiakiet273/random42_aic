@@ -53,6 +53,7 @@ src/
 ```bash
 cp .env.example .env
 # fill in HUGGINGFACE_HUB_TOKEN, GG_TRANSLATE_API_KEY, SUBMIT_USERNAME/PASSWORD, and dataset paths
+# (+ NGROK_AUTHTOKEN / NGROK_DOMAIN for `./stack.sh start --remote`: teammates, docs/LOCAL.md)
 ```
 
 ### Docker (recommended)

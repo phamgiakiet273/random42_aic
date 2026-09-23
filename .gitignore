@@ -181,3 +181,5 @@ cython_debug/
 .cache/
 .env.baremetal
 .env.bak-*
+# a teammate's filled-in nginx conf (their local keyframe path)
+nginx/teammate.conf

@@ -277,9 +277,10 @@ Example response:
 
 ### Submission
 
-These endpoints forward a submission to the configured DRES/evaluation system.
-They require a valid configured session and evaluation; do not call them as a
-connectivity test.
+These endpoints forward a submission to the team's central submission service
+(`SUBMISSION_HOST_PUBLIC`), which submits it to DRES. They are real submissions;
+do not call them as a connectivity test. The hub also passes `/submission/*`
+straight through to that service (what the React UI uses).
 
 | Endpoint | Required form fields |
 | --- | --- |
@@ -287,8 +288,8 @@ connectivity test.
 | `POST /submit_QA` | `answer`, `video_id`, `time` |
 | `POST /submit_TRAKE` | `video_id`, `frame_ids` |
 
-All three also accept `session_id` and `eval_id` (both default to the configured
-values).  Their `data` is the response returned by the evaluation service.
+The central service always uses its own current session and ACTIVE evaluation.
+Their `data` is the response returned by the evaluation service.
 
 ### Hub media helpers
 
@@ -428,17 +429,23 @@ data is deployed.
 
 ## Submission API (direct)
 
-Base URL: `http://<host>:9024/submission`.
+Base URL: `http://<host>:9024/submission`. This is the team's ONE DRES client
+(one worker process): it logs in once, re-reads the ACTIVE evaluation every
+`SUBMIT_POLL_SECONDS`, and submits with its own session/evaluation. `session_id`
+and `eval_id` in a request are accepted but ignored. The same answer to the same
+evaluation within `SUBMIT_DEDUP_SECONDS` is refused with **409** (nothing sent).
+Every attempt is appended to `<LOG_DIR>/submissions.jsonl`.
 
 | Endpoint | Request | Response `data` |
 | --- | --- | --- |
 | `GET /ping` | — | Liveness information. |
-| `GET /relogin` | — | Refreshes login/session state. |
+| `GET /get_session_and_eval` | — | Cached `session_id`, `eval_id`, `eval_name`, `refreshed_s_ago`, `error` (no DRES call). |
 | `GET /get_session_id` | — | Current session ID. |
-| `GET /get_eval_id?session_id=...` | `session_id` query | Evaluation ID for the session. |
-| `POST /submit_kis` | JSON: `session_id`, `eval_id`, `mediaItemName`, `start`, `end` | Evaluation server response. |
-| `POST /submit_qa` | JSON: `session_id`, `eval_id`, `answer`, `video_id`, `time` | Evaluation server response. |
-| `POST /submit_trake` | JSON: `session_id`, `eval_id`, `video_id`, `frame_ids` | Evaluation server response. |
+| `GET /get_eval_id` | — | Current ACTIVE evaluation ID. |
+| `GET /relogin` | — | Manual recovery: new login + refresh. Nothing calls it automatically. |
+| `POST /submit_kis` | JSON: `mediaItemName`, `start`, `end` | Evaluation server response. |
+| `POST /submit_qa` | JSON: `answer`, `video_id`, `time` | Evaluation server response. |
+| `POST /submit_trake` | JSON: `video_id`, `frame_ids` | Evaluation server response. |
 
 Example KIS payload:
 

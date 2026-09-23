@@ -225,10 +225,16 @@ class Settings(BaseSettings):
     )
     submission_max_workers: int = Field(5, alias="SUBMISSION_MAX_WORKERS")
     submit_base_url: str = Field(
-        "https://eventretrieval.oj.io.vn", alias="SUBMIT_BASE_URL"
+        "https://eventretrieval.one", alias="SUBMIT_BASE_URL"
     )
     submit_username: str | None = Field(None, alias="SUBMIT_USERNAME")
     submit_password: str | None = Field(None, alias="SUBMIT_PASSWORD")
+    # Central submission service (one per team, on the server; see
+    # src/services/submission_service.py). How often the service re-reads the ACTIVE evaluation from DRES.
+    submit_poll_seconds: int = Field(10, alias="SUBMIT_POLL_SECONDS")
+    # A byte-identical answer to the same evaluation inside this window is
+    # refused team-wide (one task lasts at most 5 min).
+    submit_dedup_seconds: int = Field(300, alias="SUBMIT_DEDUP_SECONDS")
 
     # --- VLM extractor (pre-processing pipeline) ---
     prompt_title_extractor_path: str = Field(

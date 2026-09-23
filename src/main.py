@@ -88,28 +88,21 @@ def _build_hub_app() -> FastAPI:
 
     service = HubGatewayService()
 
-    @asynccontextmanager
-    async def lifespan(app: FastAPI):
-        task = asyncio.create_task(service.start_session_refresh_loop())
-        yield
-        task.cancel()
-
+    # No DRES session refresh loop here any more: it called /submission/relogin
+    # every 60 s from EVERY hub worker, minting a new DRES session each time. The
+    # central submission service owns the session now.
     app = create_app(
         enable_cors=True,
         templates_dir=_UI_DIR / "templates",
         static_dir=_UI_DIR / "static",
         template_name="hub.html",
-        lifespan=lifespan,
     )
     app.include_router(build_hub_router(service))
-    # Mount the DRES submission router on the hub as well: the deployed stack runs
-    # the hub (not a standalone submission service), and the legacy UI reached
-    # submission through the hub too. Login stays lazy (creds arrive on comp day),
-    # so constructing the service here makes no network call.
-    from src.apis.submission_api import build_router as build_submission_router
-    from src.services.submission_service import SubmissionService
+    # /submission/* is forwarded to the team's ONE central submission service
+    # (SUBMISSION_HOST_PUBLIC); the hub never logs in to DRES itself.
+    from src.apis.submission_proxy import build_router as build_submission_proxy
 
-    app.include_router(build_submission_router(SubmissionService()))
+    app.include_router(build_submission_proxy())
     return app
 
 
@@ -136,13 +129,11 @@ def _build_submission_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        try:
-            await service.login()
-        except (
-            Exception
-        ) as exc:  # DRES may be unreachable at boot -- don't crash the app for it.
-            logger.warning(f"DRES login failed at startup, will retry lazily: {exc}")
+        # Logs in once, then keeps the ACTIVE evaluation current. Failures (DRES
+        # unreachable, no creds yet) are retried by the loop, never fatal.
+        task = asyncio.create_task(service.poll_forever())
         yield
+        task.cancel()
 
     app = create_app(lifespan=lifespan)
     app.include_router(build_submission_router(service))
@@ -391,6 +382,10 @@ if __name__ == "__main__":
 
     _settings = get_settings()
     _host, _port, _workers = _host_port_workers(_SERVICE, _settings)
+    if _SERVICE == "submission":
+        # One process = one DRES session + one duplicate guard for the whole team.
+        # Legacy ran 5 workers, i.e. 5 independent logins.
+        _workers = 1
     # Uvicorn requires an import string, rather than an already-created app,
     # to honour `workers > 1` (the hub defaults to five workers).
     uvicorn.run(

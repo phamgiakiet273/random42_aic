@@ -1,0 +1,72 @@
+# Teammate machine -- the ONLY thing you run is this nginx (the bundled one from
+# SIU_Pumpking works). It serves keyframes off your own disk and forwards
+# everything else -- the UI, search (/hub), DRES submission, video -- to the
+# server's gateway, so the whole team shares one hub and ONE DRES session.
+# No conda env, no local hub, no UI build, no DRES password on this machine.
+#
+#   cp nginx/teammate.conf.example nginx/teammate.conf      # gitignored; edit the "<<< EDIT" line
+#   NGINX=/path/to/SIU_Pumpking/nginx                        # needs a logs/ dir inside
+#   $NGINX/sbin/nginx -p $NGINX -c "$PWD/nginx/teammate.conf" -t        # check
+#   $NGINX/sbin/nginx -p $NGINX -c "$PWD/nginx/teammate.conf"           # start
+#   $NGINX/sbin/nginx -p $NGINX -c "$PWD/nginx/teammate.conf" -s reload # after edits
+#   $NGINX/sbin/nginx -p $NGINX -c "$PWD/nginx/teammate.conf" -s stop
+# then open http://localhost:9080  (docs/LOCAL.md, "Teammates").
+
+worker_processes 1;
+pid logs/aic2026-teammate.pid;          # own pid file: runs beside the legacy nginx
+error_log logs/aic2026-teammate-error.log warn;
+events { worker_connections 1024; }
+
+http {
+    # Self-contained: no `include mime.types` (its location depends on the build).
+    types {
+        text/html html; text/css css; application/javascript js mjs;
+        application/json json; image/svg+xml svg; image/x-icon ico;
+        image/avif avif; image/webp webp; image/jpeg jpg jpeg; image/png png;
+        font/woff2 woff2; video/mp4 mp4;
+    }
+    default_type application/octet-stream;
+    sendfile on;
+    access_log off;
+    # Resolve the ngrok domain per request (its IPs can change mid-session).
+    # If your network blocks public DNS, put your router's DNS server here.
+    resolver 1.1.1.1 8.8.8.8 valid=300s ipv6=off;
+    resolver_timeout 5s;
+
+    server {
+        listen 127.0.0.1:9080;          # this machine only
+
+        # The server gateway: the team's ngrok domain. Only if ngrok is down, use
+        #   "http://127.0.0.1:9090"   with   ssh -L 9090:localhost:9090 <server>
+        set $aic_server "https://hallie-sabulous-nicholle.ngrok-free.dev";
+
+        # Headers for EVERY proxied request. Keep them here: a location that sets
+        # its own proxy_set_header silently drops all of these.
+        proxy_set_header Host $proxy_host;              # ngrok routes by Host
+        proxy_set_header ngrok-skip-browser-warning 1;  # free ngrok domains' interstitial
+        proxy_ssl_server_name on;                       # SNI for https upstreams
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_read_timeout 300s;
+        client_max_body_size 64m;                       # image search uploads a file
+
+        # --- keyframes: your disk first ... ---
+        location /media/frames/ {
+            # <<< EDIT: the folder that CONTAINS 0/ (and 1/). Absolute, keep the trailing /.
+            alias /CHANGE-ME/aic_data/;
+            expires 30d;
+            error_page 404 = @server;   # ... the server for any frame you don't have
+        }
+
+        # --- video: not local, streamed from the server (Range passes through) ---
+        location /media/clips/ {
+            proxy_buffering off;
+            proxy_pass $aic_server;
+        }
+
+        location @server { proxy_pass $aic_server; }
+
+        # --- everything else: the UI, /hub, /submission, /result_manager ---
+        location / { proxy_pass $aic_server; }
+    }
+}

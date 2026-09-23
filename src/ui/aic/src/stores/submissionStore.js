@@ -6,10 +6,11 @@ import {
   submitTrake,
   frameTimeMs,
 } from '../api/submission'
+import { videoStem } from '../api/media'
 
-// Per-evaluation dup-guard key: submitting the identical answer twice is wasted
-// (DRES rejects it) and every wrong submit before the first correct costs points.
-const answerKey = (evalId, sig) => `${evalId}||${sig}`
+// Duplicate answers are refused by the central submission service (team-wide,
+// per evaluation, time-windowed), which answers 409 -- no client-side guard, so
+// teammates and the server UI share one source of truth.
 
 function verdictOf(res) {
   const v = String(res?.submission || res?.status || '').toUpperCase()
@@ -19,14 +20,17 @@ function verdictOf(res) {
   return 'info'
 }
 
+// TRAKE entries hold the extension-less video name (videoStem). Records carry
+// "L21_V001.mp4" while temporal chains pass "L21_V001"; without one form, adding a
+// frame to a loaded chain looked like a different video and silently restarted it.
 export const useSubmissionStore = create((set, get) => ({
   sessionId: null,
   evalId: null,
+  evalName: null,
   ready: false, // logged in AND an ACTIVE evaluation exists
   message: '',
   busy: false,
   last: null, // { kind: 'correct'|'wrong'|'error'|'info', text }
-  submitted: new Set(), // dup-guard keys
 
   clearLast: () => set({ last: null }),
 
@@ -35,6 +39,7 @@ export const useSubmissionStore = create((set, get) => ({
     set({
       sessionId: r.session_id || null,
       evalId: r.eval_id || null,
+      evalName: r.eval_name || null,
       ready: !!(r.ok && r.eval_id),
       message: r.message || '',
     })
@@ -51,24 +56,19 @@ export const useSubmissionStore = create((set, get) => ({
     return true
   },
 
-  async _submit(sig, doCall, label) {
+  async _submit(doCall, label) {
     if (!(await get()._ensureReady())) return
-    const key = answerKey(get().evalId, sig)
-    if (get().submitted.has(key)) {
-      set({ last: { kind: 'info', text: `Already submitted — ${label}` } })
-      return
-    }
     set({ busy: true, last: { kind: 'info', text: `Submitting ${label}…` } })
     try {
       const res = await doCall()
       const kind = verdictOf(res)
       const desc = res?.description ? ` — ${res.description}` : ''
-      set((s) => ({
-        submitted: new Set(s.submitted).add(key),
-        last: { kind, text: `${kind.toUpperCase()}: ${label}${desc}` },
-      }))
+      set({ last: { kind, text: `${kind.toUpperCase()}: ${label}${desc}` } })
     } catch (e) {
-      set({ last: { kind: 'error', text: `Submit failed (${label}): ${e.message}` } })
+      // 409 = the team already sent this exact answer (or no ACTIVE evaluation):
+      // nothing was sent, so it is information, not a failure to retry.
+      const kind = e.status === 409 ? 'info' : 'error'
+      set({ last: { kind, text: `${kind === 'info' ? 'Not sent' : 'Submit failed'} (${label}): ${e.message}` } })
     } finally {
       set({ busy: false })
     }
@@ -92,7 +92,7 @@ export const useSubmissionStore = create((set, get) => ({
     const ms = frameTimeMs(record.keyframe_id, record.fps)
     if (ms == null) return get()._refuseUnknownFps(video)
     const label = `KIS ${video} @ ${ms}ms`
-    return get()._submit(`KIS|${video}|${ms}`, () =>
+    return get()._submit(() =>
       submitKis({ sessionId: get().sessionId, evalId: get().evalId, video, start: ms, end: ms }),
       label,
     )
@@ -104,7 +104,7 @@ export const useSubmissionStore = create((set, get) => ({
     const ms = frameTimeMs(record.keyframe_id, record.fps)
     if (ms == null) return get()._refuseUnknownFps(video)
     const label = `QA "${answer}" ${video} @ ${ms}ms`
-    return get()._submit(`QA|${answer}|${video}|${ms}`, () =>
+    return get()._submit(() =>
       submitQa({ sessionId: get().sessionId, evalId: get().evalId, answer, video, time: ms }),
       label,
     )
@@ -114,7 +114,7 @@ export const useSubmissionStore = create((set, get) => ({
   submitTrakeFrames(video, frameIds) {
     const ids = frameIds.map((f) => String(parseInt(f, 10))).join(',')
     const label = `TRAKE ${video} [${ids}]`
-    return get()._submit(`TR|${video}|${ids}`, () =>
+    return get()._submit(() =>
       submitTrake({ sessionId: get().sessionId, evalId: get().evalId, video, frameIds: ids }),
       label,
     )
@@ -134,7 +134,8 @@ export const useSubmissionStore = create((set, get) => ({
    *  own event order (NOT re-sorted by frame number, unlike addTrakeFrame) —
    *  that order is what the backend already matched the query's events to.
    *  Replaces any work-in-progress sequence, same as switching video does. */
-  loadTrakeChain(video, frameIds) {
+  loadTrakeChain(videoName, frameIds) {
+    const video = videoStem(videoName)
     const trake = frameIds.map((frame) => ({ video, frame }))
     set({
       mode: 'trake',
@@ -144,7 +145,7 @@ export const useSubmissionStore = create((set, get) => ({
   },
 
   addTrakeFrame(record) {
-    const video = record.video_name
+    const video = videoStem(record.video_name)
     const frame = parseInt(record.keyframe_id, 10)
     set((s) => {
       const same = s.trake.length === 0 || s.trake[0].video === video

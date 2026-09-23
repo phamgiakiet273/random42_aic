@@ -2,7 +2,9 @@
 # Random42 AIC -- run the whole stack on this machine.
 #
 #   ./stack.sh start          server + hub + frontend, with preflight + verify
-#   ./stack.sh start --remote ... and the ngrok gateway on :9090
+#   ./stack.sh start --remote ... and the gateway on :9090 + its ngrok tunnel
+#                             (https://$NGROK_DOMAIN; rebuilds the UI it serves)
+#   ./stack.sh ui-build       rebuild src/ui/aic/dist (what the gateway serves teammates)
 #   ./stack.sh stop
 #   ./stack.sh restart        force-recreate (use after editing .env)
 #   ./stack.sh status
@@ -26,9 +28,10 @@ LOCAL=docker-compose-local.yml
 GATEWAY=docker-compose-gateway.yml
 
 # The services the search stack actually needs. siglip_beta / metaclip / jina /
-# submission / rerank are defined in the compose file but are not part of this
-# deployment -- their indexes were never migrated.
-SERVICES=(qdrant-siglip-alpha media_server util result_manager siglip_alpha)
+# rerank are defined in the compose file but are not part of this deployment --
+# their indexes were never migrated. `submission` is the team's ONE DRES client
+# (every hub and the gateway forward /submission/* to it); CPU-only, no GPU.
+SERVICES=(qdrant-siglip-alpha media_server util result_manager submission siglip_alpha)
 
 EXT4=/srv/random42
 DATA=/mnt/e/workspace/AIC_2026/data
@@ -81,6 +84,7 @@ do_start() {
   head_ "starting hub + frontend"
   docker compose -f "$LOCAL" up -d $recreate 2>&1 | sed 's/^/    /'
   if [ -n "$remote" ]; then
+    do_ui_build
     head_ "starting remote gateway"
     docker compose -f "$GATEWAY" up -d $recreate 2>&1 | sed 's/^/    /'
   fi
@@ -88,12 +92,17 @@ do_start() {
   wait_http "qdrant siglip  :6333" http://localhost:6333/readyz 120
   wait_http "media server   :9027" "http://localhost:9027/media/frames/0/frames/low_res_autoshot/Keyframes_L21/keyframes/L21_V001/00000.avif" 60
   wait_http "util           :9025" http://localhost:9025/util/ping 120
+  wait_http "submission     :9024" http://localhost:9024/submission/ping 60
   wait_http "result_manager :9022" http://localhost:9022/result_manager/ping 120
   # siglip_alpha loads SigLIP2 from the model cache; ~2 min cold on ext4.
   wait_http "siglip_alpha   :9029" http://localhost:9029/siglip_alpha/ping 400
   wait_http "hub            :9021" http://localhost:9021/hub/ping 120
   wait_http "frontend      :10000" http://localhost:10000/ 180
-  [ -n "$remote" ] && wait_http "gateway        :9090" http://localhost:9090/gateway/ping 60
+  if [ -n "$remote" ]; then
+    wait_http "gateway        :9090" http://localhost:9090/gateway/ping 60
+    local dom; dom=$(sed -n 's/^NGROK_DOMAIN=//p' .env)
+    wait_http "ngrok  https://$dom" "https://$dom/gateway/ping" 90
+  fi
   do_verify
 }
 
@@ -135,6 +144,15 @@ do_verify() {
     code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$ui$path")
     [ "$code" = "$want" ] && ok "UI proxy ${path%%\?*}" || bad "UI proxy $path -> $code (want $want)"
   done
+  # DRES submit path: UI -> /submission (vite) -> hub -> central submission service
+  # -> DRES. Read-only (cached session/evaluation). status 200 = logged in (eval_id
+  # null until BTC opens an evaluation); 400 = no SUBMIT_* creds in .env;
+  # 503 = service unreachable.
+  local sub
+  sub=$(curl -s --max-time 30 "$ui/submission/get_session_and_eval")
+  if [ "$(jq -r '.status' <<<"$sub" 2>/dev/null)" = "200" ]; then
+    ok "DRES login via UI proxy ($(jq -r '.message' <<<"$sub"))"
+  else bad "DRES submit path: $(jq -r '.message // empty' <<<"$sub" 2>/dev/null || head -c 120 <<<"$sub")"; fi
   code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Range: bytes=0-1023' --max-time 30 \
     "$ui/media/clips/0/videos/Videos_L21/video/L21_V001.mp4")
   [ "$code" = "206" ] && ok "UI proxy /media/clips (range -> 206, video seeking)" \
@@ -171,12 +189,21 @@ do_status() {
   docker compose -f "$SERVER" ps --format '{{.Name}}\t{{.Status}}' 2>/dev/null \
     | sort -u | sed 's/^/    /'
   head_ "endpoints"
-  for p in "6333:/readyz" "9021:/hub/ping" "9025:/util/ping" "9022:/result_manager/ping" \
+  for p in "6333:/readyz" "9021:/hub/ping" "9025:/util/ping" "9022:/result_manager/ping" "9024:/submission/ping" \
            "9029:/siglip_alpha/ping" "10000:/" "9090:/gateway/ping"; do
     port=${p%%:*}; path=${p#*:}
     code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://localhost:$port$path" 2>/dev/null)
     [ "$code" = "200" ] && ok ":$port $path" || warn ":$port $path -> ${code:-down}"
   done
+}
+
+# The gateway serves the BUILT UI to remote teammates (vite dev over ngrok would be
+# ~1.9k module requests per page load). Same bun image + node_modules volume as the
+# frontend container; CPU only.
+do_ui_build() {
+  head_ "building the UI (src/ui/aic/dist)"
+  docker run --rm -v "$PWD/src/ui/aic:/app" -v aic2026_aic_node_modules:/app/node_modules \
+    -w /app oven/bun:1 bun run build 2>&1 | tail -3 | sed 's/^/    /'
 }
 
 do_stop() {
@@ -192,6 +219,7 @@ case "${1:-}" in
   stop)    do_stop ;;
   status)  do_status ;;
   verify)  do_verify ;;
+  ui-build) do_ui_build ;;
   logs)    shift; docker compose -f "$SERVER" logs -f --tail=100 "$@" ;;
   *) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

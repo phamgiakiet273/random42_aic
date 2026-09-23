@@ -17,9 +17,13 @@ export default function SubmissionStatus() {
   const bootstrap = useSubmissionStore((s) => s.bootstrap)
   const clearLast = useSubmissionStore((s) => s.clearLast)
 
-  // Try to establish a DRES session + active evaluation once at startup.
+  // The central submission service owns the DRES session and re-reads the ACTIVE
+  // evaluation itself; polling its cached state keeps the badge current when BTC
+  // opens/switches an evaluation. Cheap: no DRES call, no login.
   useEffect(() => {
     bootstrap()
+    const t = setInterval(() => bootstrap(), 10000)
+    return () => clearInterval(t)
   }, [bootstrap])
 
   // Auto-dismiss non-error verdicts.

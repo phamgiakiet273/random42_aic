@@ -135,7 +135,7 @@ export default function FrameDetailModal({
   // targets restart the sequence when the video changes, so a list that belongs
   // to another video is simply not shown here.
   const markedHere = isDres
-    ? trake.filter((t) => t.video === record?.video_name).map((t) => t.frame)
+    ? trake.filter((t) => t.video === videoName).map((t) => t.frame)
     : csvMarkVideo === videoName
       ? csvMarks
       : []

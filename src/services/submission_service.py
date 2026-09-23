@@ -1,17 +1,32 @@
-"""Business logic for submitting KIS/QA/TRAKE answers to the DRES evaluation server.
+"""The team's ONE DRES client: submits KIS/QA/TRAKE answers for everybody.
 
-Login is no longer a constructor side effect (the legacy `SubmissionHandler`
-auto-logged in inside `__init__`, so simply instantiating it made a network
-call). Call `SubmissionService.login()` explicitly once -- e.g. from the app's
-startup hook -- before using the other methods.
+Like the legacy `services/submission_service.py`, this runs once, on the server,
+and every UI -- the server's and each teammate's -- reaches it (via its hub or the
+public gateway). Unlike legacy, it owns the session and evaluation outright:
+
+  * logs in once, and again only when DRES rejects the session. Never per client
+    request: every login mints a new session, which is how the legacy hub's
+    periodic /relogin churned session ids between teammates;
+  * re-reads the ACTIVE evaluation every SUBMIT_POLL_SECONDS in the background;
+  * submits with ITS session/evaluation -- ids a client sends are ignored;
+  * refuses a byte-identical answer to the same evaluation within
+    SUBMIT_DEDUP_SECONDS, team-wide (a repeat never scores and can cost points);
+  * appends every attempt to <LOG_DIR>/submissions.jsonl.
+
+Run it with ONE worker process (main.py forces this): each process would hold its
+own session, poll and duplicate guard.
 """
 
 from __future__ import annotations
 
+import asyncio
 import glob
 import json
 import os
+import time
 from http import HTTPStatus
+
+import httpx
 
 from src.common.schemas.api import APIResponse
 from src.common.schemas.submission import (
@@ -21,6 +36,7 @@ from src.common.schemas.submission import (
 )
 from src.externals.dres_client import DRESClient
 from src.utils.logger import get_logger
+from src.utils.settings import get_settings
 
 logger = get_logger()
 
@@ -81,139 +97,195 @@ class DRESSubmitError(RuntimeError):
 
 class SubmissionService:
     def __init__(self, dres_client: DRESClient | None = None) -> None:
+        settings = get_settings()
         self.dres_client = dres_client or DRESClient()
         self.eval_id: str | None = None
+        self.eval_name: str | None = None
+        self.last_refresh: float | None = None
+        self.last_error: str | None = None
+        self._poll_seconds = settings.submit_poll_seconds
+        self._dedup_seconds = settings.submit_dedup_seconds
+        self._recent: dict[str, tuple[float, str]] = {}  # answer key -> (time, verdict)
+        self._lock = asyncio.Lock()
+        self._log_path = os.path.join(settings.log_dir, "submissions.jsonl")
 
-    async def login(self) -> APIResponse:
-        """Explicit login -- call once (e.g. at app startup), not from the constructor."""
-        session_id = await self.dres_client.login()
-        return APIResponse(
-            status=HTTPStatus.OK.value,
-            message="Login successful",
-            data={"session_id": session_id},
-        )
+    @property
+    def configured(self) -> bool:
+        return bool(self.dres_client.username and self.dres_client.password)
+
+    # ---- session + ACTIVE evaluation (owned here, shared by the whole team) ----
+
+    async def _login(self) -> None:
+        await self.dres_client.login()
+
+    async def refresh(self) -> None:
+        """Re-read the ACTIVE evaluation. Logs in only when there is no session, or
+        once more when DRES says the session is no longer valid."""
+        if not self.configured:
+            self.last_error = "DRES credentials not set (SUBMIT_USERNAME / SUBMIT_PASSWORD)"
+            return
+        if not self.dres_client.session_id:
+            await self._login()
+        try:
+            evaluations = await self.dres_client.get_evaluations(self.dres_client.session_id)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code not in (401, 403):
+                raise
+            logger.warning("DRES rejected the session; logging in again")
+            await self._login()
+            evaluations = await self.dres_client.get_evaluations(self.dres_client.session_id)
+        active = [e for e in evaluations if e.get("status") == "ACTIVE"]
+        if len(active) > 1:
+            logger.warning(f"{len(active)} ACTIVE evaluations; using the first: {[e.get('name') for e in active]}")
+        new_id = active[0]["id"] if active else None
+        if new_id != self.eval_id:
+            logger.info(f"ACTIVE evaluation changed: {self.eval_id} -> {new_id} ({active[0].get('name') if active else '-'})")
+        self.eval_id = new_id
+        self.eval_name = active[0].get("name") if active else None
+        self.last_refresh = time.time()
+        self.last_error = None
+
+    async def poll_forever(self) -> None:
+        """Background task (started by main.py): keep session + evaluation current."""
+        while True:
+            try:
+                await self.refresh()
+            except Exception as exc:  # DRES down / network: keep polling
+                self.last_error = f"{type(exc).__name__}: {exc}"
+                logger.warning(f"DRES refresh failed: {self.last_error}")
+            await asyncio.sleep(self._poll_seconds)
+
+    def _state(self) -> dict:
+        return {
+            "session_id": self.dres_client.session_id,
+            "eval_id": self.eval_id,
+            "eval_name": self.eval_name,
+            "refreshed_s_ago": None if self.last_refresh is None else round(time.time() - self.last_refresh, 1),
+            "error": self.last_error,
+        }
 
     async def ping(self) -> APIResponse:
-        logger.info("ping invoked")
-        return APIResponse(
-            status=HTTPStatus.OK.value,
-            message="Running (Healthy)",
-            data="ping",
-        )
-
-    async def get_session_id(self) -> APIResponse:
-        if not self.dres_client.session_id:
-            await self.login()
-        logger.info(f"Active SESSION ID: {self.dres_client.session_id}")
-        return APIResponse(
-            status=HTTPStatus.OK.value,
-            message="Session ID fetched",
-            data={"session_id": self.dres_client.session_id},
-        )
-
-    async def get_eval_id(self, session_id: str) -> APIResponse:
-        if not session_id:
-            raise ValueError("session_id is required")
-        evaluations = await self.dres_client.get_evaluations(session_id)
-        active_eval = next((e for e in evaluations if e["status"] == "ACTIVE"), None)
-        if not active_eval:
-            raise LookupError("No active evaluation found")
-        self.eval_id = active_eval["id"]
-        logger.info(f"Active EVAL ID: {self.eval_id}")
-        return APIResponse(
-            status=HTTPStatus.OK.value,
-            message="Active evaluation ID fetched",
-            data={"eval_id": self.eval_id},
-        )
+        return APIResponse(status=HTTPStatus.OK.value, message="Running (Healthy)", data="ping")
 
     async def get_session_and_eval(self) -> APIResponse:
-        """One-call bootstrap for the UI: (lazy) login + the ACTIVE evaluation id.
-
-        Graceful when creds are unset (they arrive on competition day) -- returns
-        nulls with a clear message instead of raising, so the UI can prompt.
-        """
-        if not self.dres_client.username or not self.dres_client.password:
+        """UI bootstrap/badge. Served from the shared state -- no DRES call unless
+        this process has never refreshed (the poll normally keeps it current)."""
+        if not self.configured:
             return APIResponse(
                 status=HTTPStatus.BAD_REQUEST.value,
                 message="DRES credentials not set (SUBMIT_USERNAME / SUBMIT_PASSWORD)",
-                data={"session_id": None, "eval_id": None},
+                data=self._state(),
             )
+        if self.last_refresh is None:
+            try:
+                await self.refresh()
+            except Exception as exc:
+                self.last_error = f"{type(exc).__name__}: {exc}"
         if not self.dres_client.session_id:
-            await self.dres_client.login()
-        evaluations = await self.dres_client.get_evaluations(self.dres_client.session_id)
-        active = next((e for e in evaluations if e.get("status") == "ACTIVE"), None)
-        self.eval_id = active["id"] if active else None
+            return APIResponse(
+                status=HTTPStatus.SERVICE_UNAVAILABLE.value,
+                message=f"not logged in to DRES: {self.last_error}",
+                data=self._state(),
+            )
         return APIResponse(
             status=HTTPStatus.OK.value,
-            message="ok" if active else "logged in, but no ACTIVE evaluation",
-            data={"session_id": self.dres_client.session_id, "eval_id": self.eval_id},
+            message="ok" if self.eval_id else "logged in, but no ACTIVE evaluation",
+            data=self._state(),
         )
 
+    # Legacy-shaped reads, kept for old callers; all served from the shared state.
+    async def get_session_id(self) -> APIResponse:
+        r = await self.get_session_and_eval()
+        return APIResponse(status=r.status, message=r.message, data={"session_id": self.dres_client.session_id})
+
+    async def get_eval_id(self, session_id: str | None = None) -> APIResponse:
+        r = await self.get_session_and_eval()
+        return APIResponse(status=r.status, message=r.message, data={"eval_id": self.eval_id})
+
+    async def relogin(self) -> APIResponse:
+        """Manual recovery only. Nothing calls this automatically any more."""
+        await self._login()
+        await self.refresh()
+        return APIResponse(status=HTTPStatus.OK.value, message="Re-login successful", data=self._state())
+
+    # ---- submit ----
+
     async def submit_kis(self, request: SubmitKISRequest) -> APIResponse:
-        payload = {
-            "answerSets": [
-                {
-                    "answers": [
-                        {
-                            "mediaItemName": official_video_id(request.mediaItemName),
-                            "start": request.start,
-                            "end": request.end,
-                        }
-                    ]
-                }
-            ]
-        }
-        logger.info(f"KIS-{official_video_id(request.mediaItemName)}-{request.start}-{request.end}")
-        return await self._submit(request.eval_id, request.session_id, payload)
+        name = official_video_id(request.mediaItemName)
+        payload = {"answerSets": [{"answers": [{"mediaItemName": name, "start": request.start, "end": request.end}]}]}
+        return await self._submit(f"KIS-{name}-{request.start}-{request.end}", payload)
 
     async def submit_qa(self, request: SubmitQARequest) -> APIResponse:
         text = f"QA-{request.answer}-{official_video_id(request.video_id)}-{request.time}"
-        payload = {"answerSets": [{"answers": [{"text": text}]}]}
-        logger.info(text)
-        return await self._submit(request.eval_id, request.session_id, payload)
+        return await self._submit(text, {"answerSets": [{"answers": [{"text": text}]}]})
 
     async def submit_trake(self, request: SubmitTRAKERequest) -> APIResponse:
         elements = [e.strip() for e in request.frame_ids.split(",") if e.strip()]
         text = f"TR-{official_video_id(request.video_id)}-{','.join(elements)}"
-        payload = {"answerSets": [{"answers": [{"text": text}]}]}
-        logger.info(text)
-        return await self._submit(request.eval_id, request.session_id, payload)
+        return await self._submit(text, {"answerSets": [{"answers": [{"text": text}]}]})
 
-    async def relogin(self) -> APIResponse:
-        session_id = await self.dres_client.login()
-        return APIResponse(
-            status=HTTPStatus.OK.value,
-            message="Re-login successful",
-            data={"session_id": session_id},
-        )
+    def _log(self, answer: str, outcome: str, detail: str = "") -> None:
+        try:
+            os.makedirs(os.path.dirname(self._log_path) or ".", exist_ok=True)
+            with open(self._log_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps({"t": time.strftime("%Y-%m-%d %H:%M:%S"), "eval_id": self.eval_id,
+                                    "answer": answer, "outcome": outcome, "detail": detail},
+                                   ensure_ascii=False) + "\n")
+        except OSError as exc:
+            logger.warning(f"could not append to {self._log_path}: {exc}")
 
-    async def _submit(
-        self, eval_id: str, session_id: str, payload: dict
-    ) -> APIResponse:
-        """Shared POST + DRES error-detail parsing for the three submit_* methods
-        (legacy duplicated this block three times, once per task type)."""
-        resp = await self.dres_client.submit(eval_id, session_id, payload)
+    async def _submit(self, answer: str, payload: dict) -> APIResponse:
+        """POST one answer with the shared session/evaluation, team-wide dup-guarded."""
+        if not self.eval_id or not self.dres_client.session_id:
+            await self.refresh()  # e.g. the evaluation opened since the last poll
+        if not self.eval_id:
+            raise DRESSubmitError(HTTPStatus.CONFLICT.value, "No ACTIVE evaluation on DRES -- nothing submitted")
+        key = f"{self.eval_id}|{answer}"
+        async with self._lock:  # a teammate's simultaneous identical click is refused too
+            hit = self._recent.get(key)
+            if hit and time.time() - hit[0] < self._dedup_seconds:
+                self._log(answer, "refused-duplicate", hit[1])
+                raise DRESSubmitError(
+                    HTTPStatus.CONFLICT.value,
+                    f"Already submitted by the team {int(time.time() - hit[0])}s ago ({hit[1]}) -- not resent",
+                )
+            self._recent[key] = (time.time(), "in flight")
+        logger.info(f"SUBMIT {answer} -> eval {self.eval_id}")
+        try:
+            resp = await self.dres_client.submit(self.eval_id, self.dres_client.session_id, payload)
+            if resp.status_code in (401, 403):  # session rejected => nothing was recorded; safe to resend once
+                logger.warning("DRES rejected the session on submit; logging in again and resending once")
+                await self._login()
+                resp = await self.dres_client.submit(self.eval_id, self.dres_client.session_id, payload)
+        except Exception as exc:
+            self._recent.pop(key, None)  # never reached DRES: allow a retry
+            self._log(answer, "error", repr(exc))
+            raise
+
         if resp.status_code == 200:
             result = resp.json()
+            verdict = str(result.get("submission") or result.get("status") or "")
+            self._recent[key] = (time.time(), verdict or "sent")
+            self._log(answer, verdict or "sent", result.get("description", ""))
             return APIResponse(
                 status=HTTPStatus.OK.value,
-                message="Submit successful"
-                if result.get("status")
-                else "Submit failed",
+                message="Submit successful" if result.get("status") else "Submit failed",
                 data=result,
             )
 
+        self._recent.pop(key, None)  # DRES refused it (e.g. no running task): not scored, may resend
         error_message = resp.text
         try:
-            error_data = resp.json()
-            detail_str = error_data.get("detail")
+            detail_str = resp.json().get("detail")
             if detail_str and isinstance(detail_str, str):
-                inner_data = json.loads(detail_str)
-                specific_description = inner_data.get("description")
-                if specific_description:
-                    error_message = specific_description
-        except Exception as e:
-            logger.warning(f"Could not parse detailed error from response: {e}")
-
+                specific = json.loads(detail_str).get("description")
+                if specific:
+                    error_message = specific
+        except Exception:
+            try:
+                error_message = resp.json().get("description") or error_message
+            except Exception:
+                pass
+        self._log(answer, f"http-{resp.status_code}", error_message)
         logger.error(f"Submit failed ({resp.status_code}): {error_message}")
         raise DRESSubmitError(resp.status_code, error_message)
