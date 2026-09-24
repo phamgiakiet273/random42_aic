@@ -25,27 +25,50 @@ function toFormData(fields) {
   return body
 }
 
+// Remote users reach the server through an ngrok tunnel whose session to ngrok's
+// edge drops now and then; for about a second requests fail AT NGROK (502/503/504,
+// or a response carrying its `ngrok-error-code` header, e.g. the 404 "endpoint
+// offline") or with a network error. The calls below only read (search, video
+// list, CSV...), so they are resent once after a short pause. Submissions never
+// come through here (api/submission.js): resending an answer could duplicate it.
+const RETRY_DELAY_MS = 1500
+
+function transient(res) {
+  return res.status === 502 || res.status === 503 || res.status === 504 || res.headers.has('ngrok-error-code')
+}
+
+async function fetchRetryOnce(url, makeInit = () => ({})) {
+  try {
+    const res = await fetch(url, makeInit())
+    if (!transient(res)) return res
+  } catch (err) {
+    if (err?.name === 'AbortError') throw err
+  }
+  await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS))
+  return fetch(url, makeInit())
+}
+
 // Every hub endpoint returns {status, message, data}; callers want `data`.
 export async function postForm(path, fields) {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
+  const res = await fetchRetryOnce(`${API_BASE_URL}${path}`, () => ({
     method: 'POST',
     body: toFormData(fields),
-  })
+  }))
   return unwrap(res)
 }
 
 // `base` targets a service other than the hub (e.g. the result manager).
 export async function get(path, base = API_BASE_URL) {
-  const res = await fetch(`${base}${path}`)
+  const res = await fetchRetryOnce(`${base}${path}`)
   return unwrap(res)
 }
 
 // Returns the raw Response — for endpoints that are not JSON (CSV export).
 export async function postFormRaw(path, fields) {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
+  const res = await fetchRetryOnce(`${API_BASE_URL}${path}`, () => ({
     method: 'POST',
     body: toFormData(fields),
-  })
+  }))
   if (!res.ok) throw new ApiError(await readError(res), res.status)
   return res
 }
