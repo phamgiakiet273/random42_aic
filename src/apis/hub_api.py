@@ -195,6 +195,7 @@ def build_router(service: HubGatewayService) -> APIRouter:
         image_path: str | None = Form(None),
         k: int = Form(100),
         video_filter: str | None = Form(None),
+        subset: str | None = Form(None),
         s2t_filter: str | None = Form(None),
         time_in: str | None = Form(None),
         time_out: str | None = Form(None),
@@ -209,7 +210,11 @@ def build_router(service: HubGatewayService) -> APIRouter:
 
         Takes the same fields as `/search` rather than a query id -- the hub
         runs multiple workers, so there is no shared "current query" to refer to.
+        The content-subset scope is merged exactly as `/search` does, so the file
+        holds the rows the grid showed.
         """
+        if search_type != "scroll":
+            video_filter = merge_video_filter(subset, video_filter)
         try:
             request = SearchRequest(
                 model=model,

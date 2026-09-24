@@ -394,22 +394,37 @@ class QdrantSearchClient:
         skip_frames: list | None = None,
         return_s2t: bool = True,
     ):
-        """Fetch points by id range (`feature="shot"`) or by precomputed dup/unique id lists."""
+        """Fetch points by id range (`feature="shot"`) or by precomputed dup/unique id lists.
+
+        `shot` takes one or more comma-separated videos (a bare prefix such as "L21"
+        means all its videos). The same frame-class / transcript filters and excluded
+        shots as a search apply, so Browse shows what the settings say it shows."""
         if feature == "shot":
-            id_list = sorted(self._get_frames(video_filter, time_in, time_out))
-        elif feature == "dup":
-            id_list = self.img_dups[video_filter][time_in.lstrip("0")]
-        elif feature == "unique":
-            id_list = self.img_uniques[video_filter][time_in.lstrip("0")]
+            id_list = []
+            for name in [n.strip().split(".")[0] for n in str(video_filter or "").split(",") if n.strip()]:
+                videos = [name] if name in self.frame_names else sorted(
+                    v for v in self.frame_names if v.startswith(name + "_"))
+                for v in videos:
+                    id_list += self._get_frames(v, time_in, time_out)
+            id_list = sorted(set(id_list))
+        elif feature in ("dup", "unique"):
+            table = (self.img_dups if feature == "dup" else self.img_uniques)[video_filter]
+            key = str(int(time_in))  # "00000" -> "0" (lstrip("0") made it "" -> KeyError)
+            id_list = table.get(key) or table.get(str(time_in)) or []
         else:
             raise ValueError(f"Unknown feature: {feature}")
 
-        scroll_result = self.client.retrieve(
+        scroll_filter = self._build_filter(None, s2t_filter, frame_class_filter or [], skip_frames or [])
+        scroll_filter.must = [models.HasIdCondition(has_id=list(id_list)), *(scroll_filter.must or [])]
+        points, _ = self.client.scroll(
             collection_name=self.collection_name,
-            ids=id_list,
+            scroll_filter=scroll_filter,
+            limit=max(1, len(id_list)),
             with_payload=True,
             with_vectors=False,
         )
+        order = {pid: i for i, pid in enumerate(id_list)}  # dup/unique lists are ranked
+        scroll_result = sorted(points, key=lambda pt: order.get(pt.id, 0))
         return_result = self._format_search_results(
             scroll_result,
             use_query=False,
@@ -480,6 +495,13 @@ class QdrantSearchClient:
         query_filter = self._build_filter(
             video_filter, s2t_filter, frame_class_filter, skip_frames
         )
+        # The neighbouring events obey the same frame-class filter and excluded
+        # shots as the main one; only the video scope is replaced by the id window.
+        neighbour_must = (
+            [models.FieldCondition(key="frame_class", match=models.MatchAny(any=frame_class_filter))]
+            if frame_class_filter else []
+        )
+        neighbour_must_not = list(query_filter.must_not or [])
 
         query_len = len(query_list)
         search_results = self.client.query_points(
@@ -518,7 +540,8 @@ class QdrantSearchClient:
                 )
 
             filter_results = models.Filter(
-                must=[models.HasIdCondition(has_id=list(id_condition))]
+                must=[models.HasIdCondition(has_id=list(id_condition)), *neighbour_must],
+                must_not=neighbour_must_not,
             )
             search_results = self.client.query_points(
                 collection_name=self.collection_name,
@@ -557,7 +580,8 @@ class QdrantSearchClient:
                 )
 
             filter_results = models.Filter(
-                must=[models.HasIdCondition(has_id=list(id_condition))]
+                must=[models.HasIdCondition(has_id=list(id_condition)), *neighbour_must],
+                must_not=neighbour_must_not,
             )
             search_results = self.client.query_points(
                 collection_name=self.collection_name,
@@ -741,27 +765,18 @@ class QdrantSearchClient:
         return frame_names
 
     def _get_frames(self, video_name, first_frame, last_frame):
+        """Point ids of `video_name`'s keyframes in [first_frame, last_frame], inclusive.
+
+        Bounds that are not keyframes snap INWARD. (The old code snapped the upper
+        bound to the next keyframe after it, so "frames before X" could include X
+        itself and a temporal chain could reuse its main frame as the previous event.)"""
         frame_video = self.frame_names[video_name]
-
-        list_keys = list(frame_video.keys())
-        if first_frame is None:
-            first_frame = list_keys[0]
-        if last_frame is None:
-            last_frame = list_keys[-1]
-
-        first_frame, last_frame = int(first_frame), int(last_frame)
-        if first_frame not in frame_video:
-            id_frame = bisect.bisect_left(list_keys[:-1], first_frame)
-            first_frame = list_keys[id_frame]
-        if last_frame not in frame_video:
-            id_frame = bisect.bisect_right(list_keys[:-1], last_frame)
-            last_frame = list_keys[id_frame]
-
-        list_values = list(frame_video.values())
-        idx = list_values[0]
-        first_idx = frame_video[first_frame]
-        last_idx = frame_video[last_frame]
-        return list_values[first_idx - idx : last_idx - idx + 1]
+        keys = list(frame_video.keys())
+        lo = 0 if first_frame in (None, "") else bisect.bisect_left(keys, int(first_frame))
+        hi = len(keys) - 1 if last_frame in (None, "") else bisect.bisect_right(keys, int(last_frame)) - 1
+        if lo > hi:
+            return []
+        return list(frame_video.values())[lo : hi + 1]
 
     def _prepare_dup(self, folder_path: str) -> dict[str, Any]:
         return self._load_json_folder(folder_path)

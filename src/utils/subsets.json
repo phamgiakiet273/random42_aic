@@ -1,7 +1,7 @@
 {
-  "_comment": "Content subsets -> video-code prefixes, used to scope search via the DB video_filter (video_name prefix match). EDIT freely; reloaded on save. 'label' shows in the UI, 'default' = checkbox checked on load. Prefix 'N' matches all N001-N100; 'L26' matches L26_V*.",
+  "_comment": "Content subsets -> video-code prefixes, used to scope search via the DB video_filter (video_name prefix match). EDIT freely; reloaded on save. 'label' shows in the UI, 'default' = checkbox checked on load. Prefix 'N' matches all N001-N100; 'L26' matches L26_V*. A prefix is matched against every WORD of the file name (L26 / V001 / mp4), so never use a bare 'M' (it matches 'mp4', i.e. every video) or 'V'.",
   "subsets": {
-    "news":        {"prefixes": ["L21", "L22", "M"],   "label": "News",                  "default": true,  "desc": "HTV '60 giay' general news (L21, L22) + the 2026 news batch M01-M10"},
+    "news":        {"prefixes": ["L21", "L22", "M01", "M02", "M03", "M04", "M05", "M06", "M07", "M08", "M09", "M10"], "label": "News",                  "default": true,  "desc": "HTV '60 giay' general news (L21, L22) + the 2026 news batch M01-M10"},
     "mua_lan":     {"prefixes": ["L24"],               "label": "Mua lan (lion dance)",  "default": false,  "desc": "Lion-dance performance (HTV The Thao)"},
     "education":   {"prefixes": ["L25"],               "label": "Education",             "default": false,  "desc": "Students / science / school events"},
     "documentary": {"prefixes": ["L27", "L28", "L29"], "label": "Documentary",           "default": true,  "desc": "Travel / rural / heritage / nature documentary"},
