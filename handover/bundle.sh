@@ -58,8 +58,8 @@ stage_state() {
     log "   qdrant_storage copied (consistent, no downtime)"
   else log "   !! index kept changing -- drive keeps its previous index; re-run 'state' later"; fi
 
-  # model cache: add what's new since the last bundle (e.g. the s2t models), keep the rest
-  $SUDO cp -a -n "$(envval MODEL_CACHE_HOST_PATH)/." "$MIG/hf_cache/" && log "   hf_cache synced"
+  # model cache: mirror it exactly (restore.sh compares file counts with MANIFEST)
+  $SUDO rsync -a --delete "$(envval MODEL_CACHE_HOST_PATH)/" "$MIG/hf_cache/" && log "   hf_cache mirrored"
 
   log "   docker images (support + app) and the UI node_modules volume"
   docker save -o "$MIG/docker-images/support-images.tar.new" \
