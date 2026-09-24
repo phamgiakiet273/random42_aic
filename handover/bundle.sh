@@ -27,7 +27,8 @@ stage_data() {
   rc 'F:\workspace\aic_2026\original\1\videos' "$HW\\data\\aic_2025\\original\\1\\videos" 'N*_V*.mp4' /S
   SD=$H/data/aic_2025/original/1/videos/Videos_S01/video   # S01: byte-identical, so link our names
   for f in "$SD"/S01-V*.mp4; do t="$SD/$(basename "$f" | sed 's/^S01-V/S01_V/')"; [ -e "$t" ] || ln "$f" "$t"; done
-  for d in shot speech_to_text features; do rc "E:\\workspace\\AIC_2026\\data\\1\\$d" "$HW\\data\\aic_2025\\1\\$d" /S; done
+  # fps: video_fps_1.json + frame_ms/ (real per-frame times of the 122 irregular N cams)
+  for d in shot speech_to_text features fps; do rc "E:\\workspace\\AIC_2026\\data\\1\\$d" "$HW\\data\\aic_2025\\1\\$d" /S; done
   rc 'E:\workspace\AIC_2026\data\utils' "$HW\\data\\aic_2025\\utils" /S
   log "== data done"
 }
