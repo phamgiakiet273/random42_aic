@@ -86,6 +86,14 @@ def official_video_id(name: str) -> str:
     return _load_name_map().get(stem, stem)
 
 
+class _NotSent(Exception):
+    """The answer never reached DRES (no connection): safe to send again."""
+
+
+class _NoReply(Exception):
+    """The answer was (at least partly) sent but DRES did not reply: it MAY be recorded."""
+
+
 class DRESSubmitError(RuntimeError):
     """Raised when a DRES `/submit` call returns a non-2xx response."""
 
@@ -224,6 +232,15 @@ class SubmissionService:
         text = f"TR-{official_video_id(request.video_id)}-{','.join(elements)}"
         return await self._submit(text, {"answerSets": [{"answers": [{"text": text}]}]})
 
+    async def _send(self, payload: dict) -> httpx.Response:
+        """POST to DRES, telling "never sent" apart from "sent, no reply"."""
+        try:
+            return await self.dres_client.submit(self.eval_id, self.dres_client.session_id, payload)
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as exc:
+            raise _NotSent(f"could not reach DRES ({type(exc).__name__})") from exc
+        except httpx.HTTPError as exc:  # ReadTimeout, WriteTimeout, RemoteProtocolError, ...
+            raise _NoReply(type(exc).__name__) from exc
+
     def _log(self, answer: str, outcome: str, detail: str = "") -> None:
         try:
             os.makedirs(os.path.dirname(self._log_path) or ".", exist_ok=True)
@@ -252,13 +269,30 @@ class SubmissionService:
             self._recent[key] = (time.time(), "in flight")
         logger.info(f"SUBMIT {answer} -> eval {self.eval_id}")
         try:
-            resp = await self.dres_client.submit(self.eval_id, self.dres_client.session_id, payload)
+            resp = await self._send(payload)
             if resp.status_code in (401, 403):  # session rejected => nothing was recorded; safe to resend once
                 logger.warning("DRES rejected the session on submit; logging in again and resending once")
-                await self._login()
-                resp = await self.dres_client.submit(self.eval_id, self.dres_client.session_id, payload)
-        except Exception as exc:
+                try:
+                    await self._login()
+                except Exception as exc:
+                    raise _NotSent(f"DRES login failed ({type(exc).__name__})") from exc
+                resp = await self._send(payload)
+        except _NotSent as exc:
             self._recent.pop(key, None)  # never reached DRES: allow a retry
+            self._log(answer, "not-sent", str(exc))
+            raise DRESSubmitError(HTTPStatus.BAD_GATEWAY.value, f"{exc} -- nothing submitted, safe to retry") from exc
+        except _NoReply as exc:
+            # A timeout AFTER sending is not "never reached DRES": it may be recorded,
+            # and resending a wrong answer costs another -10. Keep the guard.
+            self._recent[key] = (time.time(), "NO REPLY")
+            self._log(answer, "no-reply", str(exc))
+            raise DRESSubmitError(
+                HTTPStatus.GATEWAY_TIMEOUT.value,
+                f"No reply from DRES ({exc}): it MAY have been recorded. The same answer stays blocked for "
+                f"{self._dedup_seconds}s -- check the DRES page before submitting again",
+            ) from exc
+        except Exception as exc:
+            self._recent.pop(key, None)
             self._log(answer, "error", repr(exc))
             raise
 

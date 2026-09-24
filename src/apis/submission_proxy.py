@@ -23,11 +23,20 @@ def build_router() -> APIRouter:
     async def forward(path: str, request: Request) -> Response:
         headers = {"Content-Type": request.headers.get("content-type", "application/json")}
         try:
-            async with httpx.AsyncClient(timeout=settings.request_timeout) as client:
+            # longer than the service's worst case (submit + re-login + resend, each
+            # up to REQUEST_TIMEOUT), so a slow DRES is not reported as a failure
+            async with httpx.AsyncClient(timeout=settings.request_timeout * 3 + 10) as client:
                 upstream = await client.request(
                     request.method, f"{base}/{path}",
                     params=request.query_params, content=await request.body(), headers=headers,
                 )
+        except httpx.ReadTimeout:
+            # the request reached the service, which may still be submitting it
+            return JSONResponse(
+                status_code=504,
+                content={"status": 504, "detail": "no reply yet from the central submission service: the answer MAY "
+                         "have been submitted. Do not resend; the same answer is refused anyway", "data": None},
+            )
         except httpx.HTTPError as exc:
             return JSONResponse(
                 status_code=503,
