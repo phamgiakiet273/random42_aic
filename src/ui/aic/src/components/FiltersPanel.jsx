@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useRunSearch } from '../hooks/useRunSearch'
-import { getVideoNames, getSubsets, effectiveSubsets, SEARCH_TYPES } from '../api/search'
+import { getVideoNames, getSubsets, effectiveSubsets, scopePrefixes, SEARCH_TYPES } from '../api/search'
 import { useSearchStore } from '../stores/searchStore'
 import { useFiltersStore } from '../stores/filtersStore'
 import { useExcludedFramesStore, frameKey } from '../stores/excludedFramesStore'
@@ -55,6 +55,8 @@ export default function FiltersPanel() {
         : [...checkedSubsets, name],
     )
 
+  const batchPrefixes = videoNames.filter((name) => !name.includes('_'))
+  const scope = scopePrefixes(subsetCatalog, checkedSubsets, filters.batches, batchPrefixes)
   const needle = filters.videoSearch.toLowerCase()
   const visibleVideoNames = videoNames.filter((name) => name.toLowerCase().includes(needle))
 
@@ -89,9 +91,17 @@ export default function FiltersPanel() {
         </div>
 
         <div>
-          <p className="text-xs uppercase tracking-wide text-base-content/60 mb-1">
-            Content
-          </p>
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-xs uppercase tracking-wide text-base-content/60">Content</p>
+            <span className="flex gap-1">
+              <button type="button" className="btn btn-ghost btn-xs" onClick={() => filters.setSubsets(Object.keys(subsetCatalog))}>
+                all
+              </button>
+              <button type="button" className="btn btn-ghost btn-xs" onClick={() => filters.setSubsets([])}>
+                none
+              </button>
+            </span>
+          </div>
           <div className="grid grid-cols-2 gap-x-2">
             {Object.entries(subsetCatalog).map(([name, info]) => (
               <label
@@ -109,11 +119,19 @@ export default function FiltersPanel() {
               </label>
             ))}
           </div>
-          <p className="text-[10px] text-base-content/50 mt-1">
-            {checkedSubsets.length
-              ? `Searching: ${checkedSubsets.join(', ')}. Unchecked content is excluded.`
-              : 'No content type checked — falling back to batch scope.'}
-          </p>
+          {scope && scope.length === 0 ? (
+            <p className="text-[10px] text-warning mt-1">
+              None of the ticked content is in the ticked batch{filters.batches.length === 1 ? '' : 'es'}: searches find nothing.
+            </p>
+          ) : (
+            <p className="text-[10px] text-base-content/50 mt-1">
+              {checkedSubsets.length
+                ? `Searching: ${checkedSubsets.join(', ')}` +
+                  (filters.batches.length === 1 ? `, batch ${filters.batches[0]} only` : '') +
+                  '. Unchecked content is excluded.'
+                : 'No content type checked — searching the ticked batches.'}
+            </p>
+          )}
         </div>
 
         <div>

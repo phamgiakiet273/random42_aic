@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { getVideoNames, getSubsets, effectiveSubsets } from '../api/search'
+import { getVideoNames, getSubsets, effectiveSubsets, scopePrefixes, NO_VIDEO_FILTER } from '../api/search'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useFiltersStore } from '../stores/filtersStore'
 import { useExcludedFramesStore } from '../stores/excludedFramesStore'
@@ -38,6 +38,7 @@ export function useBaseSearchParams() {
     () => (videoNames ?? []).filter((name) => !name.includes('_')),
     [videoNames],
   )
+  const scope = scopePrefixes(subsetCatalog, checkedSubsets, filters.batches, batchPrefixes)
 
   return () => ({
     model,
@@ -46,22 +47,19 @@ export function useBaseSearchParams() {
     frameClassFilter: settings.frameClassFilter,
     skipFrames: skipFrames(),
     sortToNews: settings.sortToNews,
-    // Precedence: an explicit video selection wins; else the checked content
-    // subsets scope the search (via `subset`, resolved to prefixes server-side);
-    // else the ticked batches' prefixes. Subsets and batchPrefixes are not both
-    // sent -- the server unions video_filter, which would re-widen to everything.
-    videoFilter:
-      filters.selectedVideos.length
-        ? filters.selectedVideos.join(',')
-        : checkedSubsets.length && subsetCatalog
-          ? undefined
-          : batchPrefixes.length
-            ? batchPrefixes.join(',')
-            : undefined,
-    subset:
-      !filters.selectedVideos.length && checkedSubsets.length && subsetCatalog
-        ? checkedSubsets.join(',')
-        : undefined,
+    // Precedence: an explicit video selection wins; else the ticked content,
+    // LIMITED to the ticked batches (the batch boxes used to be ignored whenever
+    // any content was ticked); else the ticked batches alone. Sent as explicit
+    // prefixes, so the hub needs no `subset` merge.
+    videoFilter: filters.selectedVideos.length
+      ? filters.selectedVideos.join(',')
+      : scope
+        ? scope.length
+          ? scope.join(',')
+          : NO_VIDEO_FILTER
+        : batchPrefixes.length
+          ? batchPrefixes.join(',')
+          : undefined,
     s2tFilter: filters.s2tFilter || undefined,
     timeIn: filters.timeIn || undefined,
     timeOut: filters.timeOut || undefined,

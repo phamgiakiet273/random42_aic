@@ -133,6 +133,21 @@ export async function getSubsets() {
 
 // Effective checked subset names: the user's explicit choice if they've touched
 // the checkboxes (`stored` is an array), otherwise the catalog's `default` set.
+/** Matches no video: the scope when the ticked content has no videos in the
+ *  ticked batches (an empty filter would search everything instead). */
+export const NO_VIDEO_FILTER = 'NO_MATCHING_VIDEO'
+
+/** The search scope as video-code prefixes: the ticked content subsets, limited
+ *  to the ticked batches. A subset prefix is kept when a ticked batch has a
+ *  matching prefix ("N" covers N001..N100, "L21" is L21). null = no content
+ *  ticked; [] = nothing left (e.g. Traffic CCTV ticked with only Batch 0). */
+export function scopePrefixes(catalog, checkedSubsets, batches, batchPrefixes) {
+  if (!catalog || !checkedSubsets.length) return null
+  const wanted = [...new Set(checkedSubsets.flatMap((name) => catalog[name]?.prefixes || []))]
+  if (!batches.length || !batchPrefixes.length) return wanted // no batch limit (or list still loading)
+  return wanted.filter((p) => batchPrefixes.some((q) => q.startsWith(p) || p.startsWith(q)))
+}
+
 export function effectiveSubsets(catalog, stored) {
   if (Array.isArray(stored)) return stored
   return Object.entries(catalog || {})
