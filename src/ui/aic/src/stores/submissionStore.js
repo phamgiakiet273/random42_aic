@@ -16,6 +16,23 @@ function verdictOf(res) {
   return 'info'
 }
 
+const CHOSEN_EVAL_KEY = 'aic.dres.chosenEvalId'
+function loadChosenEval() {
+  try {
+    return window.localStorage.getItem(CHOSEN_EVAL_KEY) || null
+  } catch {
+    return null
+  }
+}
+function saveChosenEval(id) {
+  try {
+    if (id) window.localStorage.setItem(CHOSEN_EVAL_KEY, id)
+    else window.localStorage.removeItem(CHOSEN_EVAL_KEY)
+  } catch {
+    /* storage unavailable: the choice lasts until reload */
+  }
+}
+
 // Submissions (KIS / Q&A / TRAKE) are explicit per-frame actions, like the legacy
 // K / Q / TR card buttons; there is no global mode. Video names are sent
 // extension-less (videoStem); the server maps them to the official DRES names.
@@ -23,7 +40,11 @@ export const useSubmissionStore = create((set, get) => ({
   sessionId: null,
   evalId: null,
   evalName: null,
-  ready: false, // logged in AND an ACTIVE evaluation exists
+  ready: false, // logged in AND an evaluation to submit to (the chosen / only ACTIVE one)
+  // DRES can run several evaluations at once: all ACTIVE ones, and the one this
+  // browser chose in the header (remembered; cleared when it is no longer ACTIVE).
+  evaluations: [], // [{ id, name }]
+  chosenEvalId: loadChosenEval(),
   message: '',
   busy: false,
   last: null, // { kind: 'correct'|'wrong'|'error'|'info', text }
@@ -32,21 +53,43 @@ export const useSubmissionStore = create((set, get) => ({
 
   async bootstrap() {
     const r = await getSessionAndEval()
-    set({
-      sessionId: r.session_id || null,
-      evalId: r.eval_id || null,
-      evalName: r.eval_name || null,
-      ready: !!(r.ok && r.eval_id),
-      message: r.message || '',
-    })
+    const evaluations = Array.isArray(r.evaluations) ? r.evaluations : []
+    set({ sessionId: r.session_id || null, evaluations })
+    get()._applyChoice(r.ok, r.message || '')
     return r
+  },
+
+  /** Pick the evaluation to submit to: the chosen one while it is ACTIVE, else
+   *  the only ACTIVE one. With several ACTIVE and none chosen there is none:
+   *  guessing could put an answer in the wrong evaluation. */
+  _applyChoice(ok = get().sessionId != null, message = get().message) {
+    const { evaluations } = get()
+    let chosen = get().chosenEvalId
+    if (chosen && !evaluations.some((e) => e.id === chosen)) {
+      chosen = null // it ended
+      saveChosenEval(null)
+    }
+    const current = evaluations.find((e) => e.id === chosen) || (evaluations.length === 1 ? evaluations[0] : null)
+    set({
+      chosenEvalId: chosen,
+      evalId: current?.id || null,
+      evalName: current?.name || null,
+      ready: !!(ok && current),
+      message: evaluations.length > 1 && !current ? `${evaluations.length} evaluations are ACTIVE: choose one in the header` : message,
+    })
+  },
+
+  chooseEval(id) {
+    saveChosenEval(id || null)
+    set({ chosenEvalId: id || null })
+    get()._applyChoice()
   },
 
   async _ensureReady() {
     if (get().ready && get().sessionId && get().evalId) return true
     const r = await get().bootstrap()
-    if (!(r.ok && r.eval_id)) {
-      set({ last: { kind: 'error', text: r.message || 'Not logged in / no active evaluation' } })
+    if (!get().ready) {
+      set({ last: { kind: 'error', text: get().message || r.message || 'Not logged in / no active evaluation' } })
       return false
     }
     return true
@@ -103,7 +146,8 @@ export const useSubmissionStore = create((set, get) => ({
    *  the Q&A dialog, the frame viewer), so it lives here rather than per button. */
   _confirmed(what) {
     if (!useSettingsStore.getState().confirmSubmit) return true
-    return window.confirm(`Submit to DRES?\n${what}`)
+    const to = get().evaluations.length > 1 ? `\nto evaluation: ${get().evalName}` : ''
+    return window.confirm(`Submit to DRES?\n${what}${to}`)
   },
 
   // KIS: this frame's video + time.

@@ -1,8 +1,9 @@
 """Request schemas for submitting answers to the DRES evaluation server.
 
-`session_id` / `eval_id` are accepted for compatibility but IGNORED: the central
-submission service always submits with its own current session and ACTIVE
-evaluation, so a client holding stale ids cannot submit to the wrong one.
+`session_id` is IGNORED: the central submission service always uses its own
+session. `eval_id` is the evaluation the user chose in the header when DRES runs
+several at once; it must be one of the ACTIVE ones (else 409, nothing sent).
+Omitted, the only ACTIVE evaluation is used (409 if several are ACTIVE).
 """
 
 from __future__ import annotations

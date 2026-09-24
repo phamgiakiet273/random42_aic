@@ -61,7 +61,9 @@ team's only DRES client. Hubs forward `/submission/*` to it
   per-hub `/relogin` loop minted a new session every minute from every hub worker)
 - ACTIVE evaluation re-read every `SUBMIT_POLL_SECONDS` (10); UI polls the cached
   state every 10 s (no DRES call)
-- submits use the service's own session/eval; client-sent ids are ignored
+- submits use the service's own session; the evaluation is the one the user picked in the
+  header when DRES runs several at once (must be ACTIVE; with several ACTIVE and none picked
+  the service refuses, 409), else the only ACTIVE one
 - a submit rejected with 401/403 is resent once after re-login (not recorded by DRES)
 - team-wide dup guard: same eval + same answer text within `SUBMIT_DEDUP_SECONDS`
   (300) -> 409, nothing sent; DRES errors release the guard (not scored)

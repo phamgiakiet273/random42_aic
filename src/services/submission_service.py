@@ -107,8 +107,10 @@ class SubmissionService:
     def __init__(self, dres_client: DRESClient | None = None) -> None:
         settings = get_settings()
         self.dres_client = dres_client or DRESClient()
-        self.eval_id: str | None = None
+        self.eval_id: str | None = None      # the first ACTIVE one (legacy callers)
         self.eval_name: str | None = None
+        # DRES can run several evaluations at once; the UI picks one (header drop-down)
+        self.evaluations: list[dict] = []    # [{"id", "name"}] of every ACTIVE evaluation
         self.last_refresh: float | None = None
         self.last_error: str | None = None
         self._poll_seconds = settings.submit_poll_seconds
@@ -150,6 +152,7 @@ class SubmissionService:
             logger.info(f"ACTIVE evaluation changed: {self.eval_id} -> {new_id} ({active[0].get('name') if active else '-'})")
         self.eval_id = new_id
         self.eval_name = active[0].get("name") if active else None
+        self.evaluations = [{"id": e["id"], "name": e.get("name")} for e in active]
         self.last_refresh = time.time()
         self.last_error = None
 
@@ -168,6 +171,7 @@ class SubmissionService:
             "session_id": self.dres_client.session_id,
             "eval_id": self.eval_id,
             "eval_name": self.eval_name,
+            "evaluations": self.evaluations,
             "refreshed_s_ago": None if self.last_refresh is None else round(time.time() - self.last_refresh, 1),
             "error": self.last_error,
         }
@@ -197,7 +201,8 @@ class SubmissionService:
             )
         return APIResponse(
             status=HTTPStatus.OK.value,
-            message="ok" if self.eval_id else "logged in, but no ACTIVE evaluation",
+            message=("ok" if len(self.evaluations) <= 1 else f"ok: {len(self.evaluations)} ACTIVE evaluations")
+            if self.eval_id else "logged in, but no ACTIVE evaluation",
             data=self._state(),
         )
 
@@ -221,71 +226,89 @@ class SubmissionService:
     async def submit_kis(self, request: SubmitKISRequest) -> APIResponse:
         name = official_video_id(request.mediaItemName)
         payload = {"answerSets": [{"answers": [{"mediaItemName": name, "start": request.start, "end": request.end}]}]}
-        return await self._submit(f"KIS-{name}-{request.start}-{request.end}", payload)
+        return await self._submit(f"KIS-{name}-{request.start}-{request.end}", payload, request.eval_id)
 
     async def submit_qa(self, request: SubmitQARequest) -> APIResponse:
         text = f"QA-{request.answer}-{official_video_id(request.video_id)}-{request.time}"
-        return await self._submit(text, {"answerSets": [{"answers": [{"text": text}]}]})
+        return await self._submit(text, {"answerSets": [{"answers": [{"text": text}]}]}, request.eval_id)
 
     async def submit_trake(self, request: SubmitTRAKERequest) -> APIResponse:
         elements = [e.strip() for e in request.frame_ids.split(",") if e.strip()]
         text = f"TR-{official_video_id(request.video_id)}-{','.join(elements)}"
-        return await self._submit(text, {"answerSets": [{"answers": [{"text": text}]}]})
+        return await self._submit(text, {"answerSets": [{"answers": [{"text": text}]}]}, request.eval_id)
 
-    async def _send(self, payload: dict) -> httpx.Response:
+    def _resolve_eval(self, requested: str | None) -> str:
+        """The evaluation to submit to: the one the user chose (it must be ACTIVE),
+        or the only ACTIVE one. With several ACTIVE and none chosen, refuse rather
+        than guess -- an answer in the wrong evaluation is lost."""
+        ids = [e["id"] for e in self.evaluations]
+        if requested:
+            if requested in ids:
+                return requested
+            raise DRESSubmitError(HTTPStatus.CONFLICT.value,
+                                  "The chosen evaluation is not ACTIVE any more -- choose one in the header; nothing submitted")
+        if len(ids) == 1:
+            return ids[0]
+        if not ids:
+            raise DRESSubmitError(HTTPStatus.CONFLICT.value, "No ACTIVE evaluation on DRES -- nothing submitted")
+        raise DRESSubmitError(HTTPStatus.CONFLICT.value,
+                              f"{len(ids)} evaluations are ACTIVE -- choose one in the header; nothing submitted")
+
+    async def _send(self, payload: dict, eval_id: str) -> httpx.Response:
         """POST to DRES, telling "never sent" apart from "sent, no reply"."""
         try:
-            return await self.dres_client.submit(self.eval_id, self.dres_client.session_id, payload)
+            return await self.dres_client.submit(eval_id, self.dres_client.session_id, payload)
         except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as exc:
             raise _NotSent(f"could not reach DRES ({type(exc).__name__})") from exc
         except httpx.HTTPError as exc:  # ReadTimeout, WriteTimeout, RemoteProtocolError, ...
             raise _NoReply(type(exc).__name__) from exc
 
-    def _log(self, answer: str, outcome: str, detail: str = "") -> None:
+    def _log(self, answer: str, outcome: str, detail: str = "", eval_id: str | None = None) -> None:
         try:
             os.makedirs(os.path.dirname(self._log_path) or ".", exist_ok=True)
             with open(self._log_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps({"t": time.strftime("%Y-%m-%d %H:%M:%S"), "eval_id": self.eval_id,
+                f.write(json.dumps({"t": time.strftime("%Y-%m-%d %H:%M:%S"), "eval_id": eval_id or self.eval_id,
                                     "answer": answer, "outcome": outcome, "detail": detail},
                                    ensure_ascii=False) + "\n")
         except OSError as exc:
             logger.warning(f"could not append to {self._log_path}: {exc}")
 
-    async def _submit(self, answer: str, payload: dict) -> APIResponse:
-        """POST one answer with the shared session/evaluation, team-wide dup-guarded."""
-        if not self.eval_id or not self.dres_client.session_id:
-            await self.refresh()  # e.g. the evaluation opened since the last poll
-        if not self.eval_id:
-            raise DRESSubmitError(HTTPStatus.CONFLICT.value, "No ACTIVE evaluation on DRES -- nothing submitted")
-        key = f"{self.eval_id}|{answer}"
+    async def _submit(self, answer: str, payload: dict, requested_eval: str | None = None) -> APIResponse:
+        """POST one answer with the shared session to the chosen ACTIVE evaluation,
+        team-wide dup-guarded."""
+        known = {e["id"] for e in self.evaluations}
+        if not self.dres_client.session_id or not known or (requested_eval and requested_eval not in known):
+            await self.refresh()  # e.g. an evaluation opened since the last poll
+        eval_id = self._resolve_eval(requested_eval)
+        key = f"{eval_id}|{answer}"
         async with self._lock:  # a teammate's simultaneous identical click is refused too
             hit = self._recent.get(key)
             if hit and time.time() - hit[0] < self._dedup_seconds:
-                self._log(answer, "refused-duplicate", hit[1])
+                self._log(answer, "refused-duplicate", hit[1], eval_id=eval_id)
                 raise DRESSubmitError(
                     HTTPStatus.CONFLICT.value,
                     f"Already submitted by the team {int(time.time() - hit[0])}s ago ({hit[1]}) -- not resent",
                 )
             self._recent[key] = (time.time(), "in flight")
-        logger.info(f"SUBMIT {answer} -> eval {self.eval_id}")
+        logger.info(f"SUBMIT {answer} -> eval {eval_id}")
         try:
-            resp = await self._send(payload)
+            resp = await self._send(payload, eval_id)
             if resp.status_code in (401, 403):  # session rejected => nothing was recorded; safe to resend once
                 logger.warning("DRES rejected the session on submit; logging in again and resending once")
                 try:
                     await self._login()
                 except Exception as exc:
                     raise _NotSent(f"DRES login failed ({type(exc).__name__})") from exc
-                resp = await self._send(payload)
+                resp = await self._send(payload, eval_id)
         except _NotSent as exc:
             self._recent.pop(key, None)  # never reached DRES: allow a retry
-            self._log(answer, "not-sent", str(exc))
+            self._log(answer, "not-sent", str(exc), eval_id=eval_id)
             raise DRESSubmitError(HTTPStatus.BAD_GATEWAY.value, f"{exc} -- nothing submitted, safe to retry") from exc
         except _NoReply as exc:
             # A timeout AFTER sending is not "never reached DRES": it may be recorded,
             # and resending a wrong answer costs another -10. Keep the guard.
             self._recent[key] = (time.time(), "NO REPLY")
-            self._log(answer, "no-reply", str(exc))
+            self._log(answer, "no-reply", str(exc), eval_id=eval_id)
             raise DRESSubmitError(
                 HTTPStatus.GATEWAY_TIMEOUT.value,
                 f"No reply from DRES ({exc}): it MAY have been recorded. The same answer stays blocked for "
@@ -293,14 +316,14 @@ class SubmissionService:
             ) from exc
         except Exception as exc:
             self._recent.pop(key, None)
-            self._log(answer, "error", repr(exc))
+            self._log(answer, "error", repr(exc), eval_id=eval_id)
             raise
 
         if resp.status_code == 200:
             result = resp.json()
             verdict = str(result.get("submission") or result.get("status") or "")
             self._recent[key] = (time.time(), verdict or "sent")
-            self._log(answer, verdict or "sent", result.get("description", ""))
+            self._log(answer, verdict or "sent", result.get("description", ""), eval_id=eval_id)
             return APIResponse(
                 status=HTTPStatus.OK.value,
                 message="Submit successful" if result.get("status") else "Submit failed",
@@ -320,6 +343,6 @@ class SubmissionService:
                 error_message = resp.json().get("description") or error_message
             except Exception:
                 pass
-        self._log(answer, f"http-{resp.status_code}", error_message)
+        self._log(answer, f"http-{resp.status_code}", error_message, eval_id=eval_id)
         logger.error(f"Submit failed ({resp.status_code}): {error_message}")
         raise DRESSubmitError(resp.status_code, error_message)
