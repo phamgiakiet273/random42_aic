@@ -8,6 +8,7 @@ import { UTILITY_FEATURES, utilityScrollParams } from '../api/search'
 import { buildFrameUrl, videoStem } from '../api/media'
 import { frameClassStyle } from '../utils/frameClass'
 import { COLORS, placeholderThumbnail } from '../utils/placeholder'
+import CardSubmitButtons from './CardSubmitButtons'
 
 export default function Thumbnail({ record, mediaConfig, index, onClick }) {
   const key = recordKey(record)
@@ -85,7 +86,36 @@ export default function Thumbnail({ record, mediaConfig, index, onClick }) {
           }}
         />
 
-        {/* Per-frame actions, mirroring the legacy card buttons. */}
+        {/* Region-crop matches (CCTV): boxes that made this frame match. The
+            frame and source are both 16:9, so object-cover does not crop and the
+            normalised bboxes map straight onto the figure. */}
+        {Array.isArray(record.regions) && record.regions.length > 0 && (
+          <svg
+            viewBox="0 0 1 1"
+            preserveAspectRatio="none"
+            className="absolute inset-0 w-full h-full z-[5] pointer-events-none"
+          >
+            {record.regions.map(
+              (r, i) =>
+                Array.isArray(r.bbox) && (
+                  <rect
+                    key={i}
+                    x={r.bbox[0]}
+                    y={r.bbox[1]}
+                    width={Math.max(0, r.bbox[2] - r.bbox[0])}
+                    height={Math.max(0, r.bbox[3] - r.bbox[1])}
+                    fill="none"
+                    stroke="#22c55e"
+                    strokeWidth="0.007"
+                  />
+                ),
+            )}
+          </svg>
+        )}
+
+        {/* DRES actions, the card buttons K (KIS) / Q (Q&A) / TR (TRAKE). */}
+        <CardSubmitButtons record={record} className="absolute bottom-2 left-2 z-10" />
+        {/* Per-frame search actions. */}
         <div className="absolute bottom-2 right-2 z-10 flex gap-1 opacity-60 hover:opacity-100 focus-within:opacity-100 transition-opacity">
           <button
             type="button"

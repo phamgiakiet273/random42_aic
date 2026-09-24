@@ -39,6 +39,7 @@ _KNOWN_SERVICES = (
     "siglip_alpha",
     "siglip_beta",
     "metaclip",
+    "jina",
     "fusion_model",
     "rerank",
     "submission",
@@ -87,20 +88,21 @@ def _build_hub_app() -> FastAPI:
 
     service = HubGatewayService()
 
-    @asynccontextmanager
-    async def lifespan(app: FastAPI):
-        task = asyncio.create_task(service.start_session_refresh_loop())
-        yield
-        task.cancel()
-
+    # No DRES session refresh loop here any more: it called /submission/relogin
+    # every 60 s from EVERY hub worker, minting a new DRES session each time. The
+    # central submission service owns the session now.
     app = create_app(
         enable_cors=True,
         templates_dir=_UI_DIR / "templates",
         static_dir=_UI_DIR / "static",
         template_name="hub.html",
-        lifespan=lifespan,
     )
     app.include_router(build_hub_router(service))
+    # /submission/* is forwarded to the team's ONE central submission service
+    # (SUBMISSION_HOST_PUBLIC); the hub never logs in to DRES itself.
+    from src.apis.submission_proxy import build_router as build_submission_proxy
+
+    app.include_router(build_submission_proxy())
     return app
 
 
@@ -127,13 +129,11 @@ def _build_submission_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        try:
-            await service.login()
-        except (
-            Exception
-        ) as exc:  # DRES may be unreachable at boot -- don't crash the app for it.
-            logger.warning(f"DRES login failed at startup, will retry lazily: {exc}")
+        # Logs in once, then keeps the ACTIVE evaluation current. Failures (DRES
+        # unreachable, no creds yet) are retried by the loop, never fatal.
+        task = asyncio.create_task(service.poll_forever())
         yield
+        task.cancel()
 
     app = create_app(lifespan=lifespan)
     app.include_router(build_submission_router(service))
@@ -233,6 +233,21 @@ def build_app(service_name: str, settings: Settings) -> FastAPI:
             settings.metaclip_qdrant_port,
             settings.metaclip_qdrant_grpc_port,
         )
+    elif service_name == "jina":
+        from src.modules.clip_models.jina_clip_v2 import JinaClipV2Model
+
+        model = JinaClipV2Model(
+            settings.jina_cuda_visible_devices,
+            settings.transformers_cache,
+        )
+        app = _build_clip_app(
+            "jina",
+            model,
+            settings.jina_database_name,
+            settings.jina_qdrant_url,
+            settings.jina_qdrant_port,
+            settings.jina_qdrant_grpc_port,
+        )
     elif service_name == "fusion_model":
         app = _build_fusion_model_app(settings)
     else:
@@ -274,15 +289,15 @@ def _build_fusion_model_app(settings: Settings) -> FastAPI:
         settings.transformers_cache,
     )
     qdrant_a = QdrantSearchClient(
-        settings.fusion_model_qdrant_url,
-        settings.fusion_model_qdrant_port,
-        settings.fusion_model_qdrant_grpc_port,
+        settings.fusion_model_qdrant_a_url,
+        settings.fusion_model_qdrant_a_port,
+        settings.fusion_model_qdrant_a_grpc_port,
         settings.fusion_model_database_a,
     )
     qdrant_b = QdrantSearchClient(
-        settings.fusion_model_qdrant_url,
-        settings.fusion_model_qdrant_port,
-        settings.fusion_model_qdrant_grpc_port,
+        settings.fusion_model_qdrant_b_url,
+        settings.fusion_model_qdrant_b_port,
+        settings.fusion_model_qdrant_b_grpc_port,
         settings.fusion_model_database_b,
     )
     service = FusionModelSearchService(
@@ -329,6 +344,11 @@ def _host_port_workers(service_name: str, settings: Settings) -> tuple[str, int,
             settings.siglip_v2_b_port,
             settings.siglip_v2_b_max_workers,
         ),
+        "jina": (
+            settings.jina_host,
+            settings.jina_port,
+            settings.jina_max_workers,
+        ),
         "fusion_model": (
             settings.fusion_model_host,
             settings.fusion_model_port,
@@ -362,6 +382,10 @@ if __name__ == "__main__":
 
     _settings = get_settings()
     _host, _port, _workers = _host_port_workers(_SERVICE, _settings)
+    if _SERVICE == "submission":
+        # One process = one DRES session + one duplicate guard for the whole team.
+        # Legacy ran 5 workers, i.e. 5 independent logins.
+        _workers = 1
     # Uvicorn requires an import string, rather than an already-created app,
     # to honour `workers > 1` (the hub defaults to five workers).
     uvicorn.run(

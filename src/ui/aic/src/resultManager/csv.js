@@ -115,35 +115,65 @@ export function detectQueryMode(rows) {
   return null
 }
 
-export function rowsFromCsv(text, mode) {
+/** The mode a file NAME states ("query-9-qa.csv" -> 'qa'), or null. */
+export function modeFromFilename(name) {
+  const m = /-(kis|qa|trake)(?:\.csv)?$/i.exec(String(name ?? '').trim())
+  return m ? m[1].toLowerCase() : null
+}
+
+/** `hint` = the mode the file name states; it wins over content detection (an
+ *  all-numeric Q&A file looks like a 2-event TRAKE file, and the current mode
+ *  used to win, silently dropping every answer). */
+export function rowsFromCsv(text, mode, hint = null) {
   const parsed = parseCsv(text)
-  const detected = detectQueryMode(parsed)
+  const detected = hint || detectQueryMode(parsed)
   const effective = detected || mode
   const out = []
-  parsed.forEach((cols) => {
+  let skippedHeader = false
+  parsed.forEach((cols, rowIndex) => {
     const cells = cols.map((c) => (c || '').trim())
     const videoName = cleanVideoName(cells[0])
     if (!videoName) return
+    // "video_name,frame_idx": a header is a common submission error; drop it
+    if (rowIndex === 0 && cells[1] && !/^\d+$/.test(frameBase(cells[1]))) {
+      skippedHeader = true
+      return
+    }
     if (effective === 'trake') {
       const frames = cells.slice(1).filter(Boolean)
       if (frames.length) out.push(makeRow(videoName, frames))
     } else if (cells[1]) {
       // Anything past the answer column only happens on malformed input (an
       // unquoted answer containing commas) — stitch it back.
-      const answer = effective === 'qa' ? cells.slice(2).join(',') : ''
+      const answer = effective === 'qa' ? cells.slice(2).join(',').replace(/\s*\r?\n\s*/g, ' ') : ''
       out.push(makeRow(videoName, [cells[1]], answer))
     }
   })
-  return { rows: out, detected }
+  return { rows: out, detected, skippedHeader }
 }
 
-/** Live rule check shown above the grid. */
-export function rowSummary(rows, mode) {
+const isFrameId = (f) => /^\d+$/.test(frameBase(f))
+const increasing = (frames) => frames.every((f, i) => i === 0 || Number(frameBase(f)) > Number(frameBase(frames[i - 1])))
+
+/** Live rule check shown above the grid. `expectedEventCount`, when set, is
+ *  how many events the TRAKE query actually asks for — checked per row rather
+ *  than just against each other, since rows can agree with one another and
+ *  still all be wrong. */
+export function rowSummary(rows, mode, expectedEventCount) {
   const parts = [`${rows.length} row${rows.length === 1 ? '' : 's'}`]
   let warn = false
   if (rows.length > MAX_ROWS) {
     parts.push(`over the ${MAX_ROWS}-row limit`)
     warn = true
+  }
+  const badIds = rows.filter((r) => !r.frame_ids.every(isFrameId)).length
+  if (badIds) { parts.push(`${badIds} with a non-numeric frame id`); warn = true }
+  if (mode !== 'trake') {
+    const multi = rows.filter((r) => r.frame_ids.length > 1).length
+    if (multi) { parts.push(`${multi} with several frames (only the first is exported)`); warn = true }
+  } else {
+    const unordered = rows.filter((r) => !increasing(r.frame_ids)).length
+    if (unordered) { parts.push(`${unordered} with events out of order`); warn = true }
   }
   if (mode === 'qa') {
     const missing = rows.filter((r) => !(r.answer || '').trim()).length
@@ -151,17 +181,26 @@ export function rowSummary(rows, mode) {
     if (missing) { parts.push(`${missing} without an answer`); warn = true }
     if (tooLong) { parts.push(`${tooLong} over ${MAX_ANSWER} chars`); warn = true }
   } else if (mode === 'trake') {
-    const counts = new Set(rows.map((r) => r.frame_ids.length))
-    if (counts.size > 1) {
-      parts.push(`mixed event counts (${[...counts].sort((a, b) => a - b).join(', ')})`)
-      warn = true
-    } else if (counts.size === 1) parts.push(`${[...counts][0]} events per row`)
+    const target = Number(expectedEventCount) || null
+    if (target) {
+      const mismatched = rows.filter((r) => r.frame_ids.length !== target).length
+      if (mismatched) {
+        parts.push(`${mismatched} not matching the ${target}-event query`)
+        warn = true
+      } else if (rows.length) parts.push(`all rows match the ${target}-event query`)
+    } else {
+      const counts = new Set(rows.map((r) => r.frame_ids.length))
+      if (counts.size > 1) {
+        parts.push(`mixed event counts (${[...counts].sort((a, b) => a - b).join(', ')})`)
+        warn = true
+      } else if (counts.size === 1) parts.push(`${[...counts][0]} events per row`)
+    }
   }
   return { text: parts.join(' · '), warn }
 }
 
 /** Returns { csv, problems }. Caller decides whether to proceed. */
-export function buildSubmissionCsv(rows, mode) {
+export function buildSubmissionCsv(rows, mode, expectedEventCount) {
   const problems = []
   const lines = []
   rows.forEach((result, i) => {
@@ -169,11 +208,17 @@ export function buildSubmissionCsv(rows, mode) {
     const frames = result.frame_ids.map(frameForExport).filter(Boolean)
     if (!video) problems.push(`Row ${i + 1}: missing video name`)
     if (frames.length === 0) problems.push(`Row ${i + 1}: no frame id`)
+    const bad = result.frame_ids.filter((f) => !isFrameId(f))
+    if (bad.length) problems.push(`Row ${i + 1}: frame id ${bad.map((f) => `"${f}"`).join(', ')} is not a whole number`)
+    if (mode !== 'trake' && frames.length > 1)
+      problems.push(`Row ${i + 1}: has ${frames.length} frames; ${mode.toUpperCase()} exports only the first (${frames[0]})`)
+    if (mode === 'trake' && !increasing(result.frame_ids))
+      problems.push(`Row ${i + 1}: events are not in increasing frame order`)
 
     if (mode === 'trake') {
       lines.push([video, ...frames].map(csvField).join(','))
     } else if (mode === 'qa') {
-      const answer = (result.answer || '').trim()
+      const answer = (result.answer || '').normalize('NFC').replace(/\s+/g, ' ').trim()
       if (!answer) problems.push(`Row ${i + 1}: empty answer`)
       else if (answer.length > MAX_ANSWER)
         problems.push(`Row ${i + 1}: answer is ${answer.length} characters (max ${MAX_ANSWER})`)
@@ -183,11 +228,20 @@ export function buildSubmissionCsv(rows, mode) {
     }
   })
   if (mode === 'trake') {
-    const counts = new Set(rows.map((r) => r.frame_ids.length))
-    if (counts.size > 1) {
-      problems.push(
-        `Rows have different event counts (${[...counts].sort((a, b) => a - b).join(', ')}); every row must match the number of events the query asks for`,
-      )
+    const target = Number(expectedEventCount) || null
+    if (target) {
+      rows.forEach((r, i) => {
+        if (r.frame_ids.length !== target) {
+          problems.push(`Row ${i + 1}: has ${r.frame_ids.length} events, the query expects ${target}`)
+        }
+      })
+    } else {
+      const counts = new Set(rows.map((r) => r.frame_ids.length))
+      if (counts.size > 1) {
+        problems.push(
+          `Rows have different event counts (${[...counts].sort((a, b) => a - b).join(', ')}); every row must match the number of events the query asks for`,
+        )
+      }
     }
   }
   // CRLF, no BOM, no header.

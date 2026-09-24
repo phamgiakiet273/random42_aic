@@ -1,13 +1,24 @@
+import { ListOrdered } from 'lucide-react'
 import Thumbnail from './Thumbnail'
 import { useSettingsStore } from '../stores/settingsStore'
+import { useSubmissionStore } from '../stores/submissionStore'
 
 /** One temporal result: a row whose columns are its matched events, in order.
  *  Flattening chains into the normal grid loses that sequence. */
 export default function TemporalChainRow({ chain, rank, mediaConfig, onSelect }) {
   const thumbnailSize = useSettingsStore((s) => s.thumbnailSize)
+  const openViewer = useSubmissionStore((s) => s.openViewer)
   const first = chain[0] || {}
   const videoName = String(first.video_name ?? '').split('.')[0]
   const total = chain.reduce((sum, frame) => sum + (Number(frame.score) || 0), 0)
+
+  // Temporal search already returns exactly a TRAKE answer's shape (ordered
+  // events, one video): open the viewer on the TRAKE timeline with the chain's
+  // frames as markers, to review / drag / submit.
+  function useAsTrake() {
+    const frameIds = chain.map((frame) => parseInt(frame.keyframe_id, 10))
+    openViewer(chain[0], { tab: 'trake', marks: frameIds })
+  }
 
   return (
     <div className="card bg-base-100 shadow-sm">
@@ -17,8 +28,18 @@ export default function TemporalChainRow({ chain, rank, mediaConfig, onSelect })
             <span className="badge badge-neutral badge-sm mr-2">{rank}</span>
             {videoName}
           </span>
-          <span className="text-xs text-base-content/50">
-            {chain.length} event{chain.length === 1 ? '' : 's'} · Σ {total.toFixed(3)}
+          <span className="flex items-center gap-2">
+            <span className="text-xs text-base-content/50">
+              {chain.length} event{chain.length === 1 ? '' : 's'} · Σ {total.toFixed(3)}
+            </span>
+            <button
+              type="button"
+              className="btn btn-xs btn-outline gap-1"
+              title="Open this chain on the TRAKE timeline (events pre-marked)"
+              onClick={useAsTrake}
+            >
+              <ListOrdered size={12} /> Use as TRAKE
+            </button>
           </span>
         </div>
         {/* Fixed-width columns at the configured thumbnail size: stretching a

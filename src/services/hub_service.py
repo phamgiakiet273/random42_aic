@@ -191,34 +191,17 @@ class HubGatewayService:
     # ---- DRES session bookkeeping ----
 
     async def fetch_session_and_eval_id(self) -> tuple[str, str]:
-        """Re-login then fetch the current session_id/eval_id from the submission
-        service. Pure — does not mutate `self.session_id`/`self.eval_id`."""
+        """Read the central submission service's CURRENT session_id/eval_id. No
+        re-login (legacy re-logged in on every call, churning the team's session).
+        Pure — does not mutate `self.session_id`/`self.eval_id`."""
         base_url = f"{self._settings.submission_host_public}/submission"
         async with httpx.AsyncClient(timeout=self._timeout) as client:
-            relogin_resp = await client.get(f"{base_url}/relogin")
-            if relogin_resp.status_code != 200:
-                raise HTTPException(
-                    status_code=relogin_resp.status_code,
-                    detail=f"Re-login failed: {relogin_resp.text}",
-                )
+            resp = await client.get(f"{base_url}/get_session_and_eval")
+        if resp.status_code != 200:
+            raise HTTPException(status_code=resp.status_code, detail=f"get_session_and_eval: {resp.text}")
+        data = resp.json().get("data") or {}
+        return data.get("session_id"), data.get("eval_id")
 
-            session_resp = await client.get(f"{base_url}/get_session_id")
-            if session_resp.status_code != 200:
-                raise HTTPException(
-                    status_code=session_resp.status_code,
-                    detail=f"Error get_session_id: {session_resp.text}",
-                )
-            session_id = session_resp.json()["data"]["session_id"]
-
-            eval_resp = await client.get(f"{base_url}/get_eval_id")
-            if eval_resp.status_code != 200:
-                raise HTTPException(
-                    status_code=eval_resp.status_code,
-                    detail=f"Error get_eval_id: {eval_resp.text}",
-                )
-            eval_id = eval_resp.json()["data"]["eval_id"]
-
-        return session_id, eval_id
 
     async def get_session_and_eval_id(self) -> APIResponse:
         session_id, eval_id = await self.fetch_session_and_eval_id()
@@ -372,6 +355,19 @@ class HubGatewayService:
             "metaclip": SearchModelConfig(
                 base_url=settings.metaclip_host_public,
                 backend_prefix="metaclip",
+            ),
+            "jina": SearchModelConfig(
+                base_url=settings.jina_host_public,
+                backend_prefix="jina",
+                # Text and image only: the jina service has no temporal or
+                # scroll path wired, and scroll addresses shots by id range in
+                # the siglip collection.
+                search_types={"text", "image"},
+            ),
+            "fusion_model": SearchModelConfig(
+                base_url=settings.fusion_model_host_public,
+                backend_prefix="fusion_model",
+                search_types={"text"},
             ),
         }
 

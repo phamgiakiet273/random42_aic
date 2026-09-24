@@ -29,6 +29,7 @@ import numpy as np
 from src.common.schemas.api import APIResponse
 from src.externals.qdrant_client import QdrantSearchClient
 from src.modules.vector_search.fusion import preprocessing_image, preprocessing_text
+from src.modules.vector_search.region_fusion import augment_with_regions, video_only_filter
 from src.utils.logger import get_logger
 from src.utils.metadata import bytes_to_pil_image
 from src.utils.settings import get_settings
@@ -165,6 +166,17 @@ class ClipSearchService:
         result = self._add_paths(result)
         return APIResponse(status=HTTPStatus.OK.value, message="Success", data=result)
 
+    def embed_images(self, images: list, batch: int = 16):
+        """Batch image embeddings with the ALREADY-LOADED model: the offline CCTV
+        region job uses this instead of loading a second SigLIP copy onto the GPU.
+        Same processor/autocast/normalisation as get_image_features (it IS that
+        call, on a list), so vectors match the job's own embeddings. Serialised with
+        live searches by the model's lock."""
+        import numpy as np
+        out = [np.asarray(self.model.get_image_features(images[i:i + batch]), dtype=np.float32)
+               for i in range(0, len(images), batch)]
+        return np.concatenate(out) if out else np.zeros((0, 1536), np.float32)
+
     async def text_search(
         self,
         text: str,
@@ -193,6 +205,11 @@ class ClipSearchService:
             skip_frames=skip_frames or [],
             sort_to_news=sort_to_news,
             return_s2t=return_s2t,
+        )
+        result = augment_with_regions(
+            self.qdrant, feat, result, k,
+            frame_filter=self.qdrant._build_filter(video_filter or "", s2t_filter, frame_class_filter or [], skip_frames or []),
+            region_filter=video_only_filter(video_filter),
         )
         logger.info(f"Text search completed with query {text!r}")
         result = self._add_paths(result)
@@ -228,6 +245,11 @@ class ClipSearchService:
             skip_frames=skip_frames or [],
             sort_to_news=sort_to_news,
             return_s2t=return_s2t,
+        )
+        result = augment_with_regions(
+            self.qdrant, feat, result, k,
+            frame_filter=self.qdrant._build_filter(video_filter or "", s2t_filter, frame_class_filter or [], skip_frames or []),
+            region_filter=video_only_filter(video_filter),
         )
         logger.info("Image search completed")
         result = self._add_paths(result)

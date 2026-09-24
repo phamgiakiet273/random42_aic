@@ -1,0 +1,66 @@
+# Teammate machine: the only thing you run. Keyframes come off your own disk;
+# everything else (UI, search, DRES submission, video) goes to the server's ngrok
+# gateway. Runbook: docs/LOCAL.md.
+#
+# Works under any nginx (conda-forge `nginx`, bundled SIU_Pumpking binary, Homebrew
+# on macOS, distro package) and in Docker (docker-compose-teammate.yml): every path below is
+# absolute, so nothing depends on where that nginx was installed.
+
+worker_processes 1;
+pid       /tmp/aic2026-teammate.pid;
+error_log /tmp/aic2026-teammate-error.log warn;
+events { worker_connections 1024; }
+
+http {
+    # Self-contained: no `include mime.types` (its location differs per install).
+    types {
+        text/html html; text/css css; application/javascript js mjs;
+        application/json json; image/svg+xml svg; image/x-icon ico;
+        image/avif avif; image/webp webp; image/jpeg jpg jpeg; image/png png;
+        font/woff2 woff2; video/mp4 mp4;
+    }
+    default_type application/octet-stream;
+    access_log off;
+    client_body_temp_path /tmp/aic2026-nginx-body;
+    proxy_temp_path       /tmp/aic2026-nginx-proxy;
+    fastcgi_temp_path     /tmp/aic2026-nginx-fastcgi;
+    uwsgi_temp_path       /tmp/aic2026-nginx-uwsgi;
+    scgi_temp_path        /tmp/aic2026-nginx-scgi;
+
+    # Resolve the ngrok domain per request (its IPs can change mid-session).
+    resolver 1.1.1.1 8.8.8.8 valid=300s ipv6=off;
+    resolver_timeout 5s;
+
+    server {
+        listen 9080;
+
+        # The server's gateway. If ngrok is down and you are on the team tailnet:
+        # "http://100.98.145.10:9090" (the IP: the resolver below can't see MagicDNS).
+        # Over an SSH tunnel (ssh -N -L 9090:localhost:9090 <user>@100.98.145.10):
+        # "http://127.0.0.1:9090".
+        set $aic_server "https://hallie-sabulous-nicholle.ngrok-free.dev";
+
+        # Set here only: a location with its own proxy_set_header drops these.
+        proxy_set_header Host $proxy_host;              # ngrok routes by Host
+        proxy_set_header ngrok-skip-browser-warning 1;
+        proxy_ssl_server_name on;                       # SNI for https
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_read_timeout 300s;
+        client_max_body_size 64m;                       # image search uploads a file
+
+        location /media/frames/ {
+            # <<< EDIT (native nginx only): the folder that CONTAINS 0/ (and 1/),
+            # absolute, trailing / kept. Docker mounts that folder at /data/.
+            alias /data/;
+            expires 30d;
+            error_page 404 = @server;   # frames you don't have come from the server
+        }
+        location /media/clips/ {
+            proxy_buffering off;        # stream video
+            proxy_pass $aic_server;
+        }
+        location @server { proxy_pass $aic_server; }
+        location /       { proxy_pass $aic_server; }   # UI, /hub, /submission, /result_manager
+    }
+}

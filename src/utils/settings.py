@@ -141,6 +141,20 @@ class Settings(BaseSettings):
         "data/example/cat_metaclip.npy", alias="METACLIP_DUMMY_VECTOR_PATH"
     )
 
+    # --- Jina CLIP v2 (expert B, also usable on its own) ---
+    # Its collection lives in a separate engine: it was written by Qdrant 1.19
+    # and the siglip collection by 1.15.5, and no single version reads both.
+    jina_host: str = Field("0.0.0.0", alias="JINA_HOST")
+    jina_port: int = Field(9033, alias="JINA_PORT")
+    jina_host_public: str = Field("http://localhost:9033", alias="JINA_HOST_PUBLIC")
+    jina_max_workers: int = Field(1, alias="JINA_MAX_WORKERS")
+    jina_cuda_visible_devices: str = Field("0", alias="JINA_CUDA_VISIBLE_DEVICES")
+    jina_qdrant_url: str = Field("http://qdrant-jina", alias="JINA_QDRANT_URL")
+    jina_qdrant_port: int = Field(6333, alias="JINA_QDRANT_PORT")
+    jina_qdrant_grpc_port: int = Field(6334, alias="JINA_QDRANT_GRPC_PORT")
+    jina_database_name: str = Field("EXPERT_B_V1", alias="JINA_DATABASE_NAME")
+    jina_features_size: int = Field(1024, alias="JINA_FEATURES_SIZE")
+
     # --- Expert fusion (SigLIP2 + jina-clip-v2 + learned gating) ---
     # Dormant: needs a second Qdrant collection of jina-clip-v2 embeddings
     # (1024-d). `SERVICE=fusion_model` fails fast until it is enabled.
@@ -154,12 +168,20 @@ class Settings(BaseSettings):
     fusion_model_cuda_visible_devices: str = Field(
         "0", alias="FUSION_MODEL_CUDA_VISIBLE_DEVICES"
     )
-    fusion_model_qdrant_url: str = Field(
-        "http://localhost", alias="FUSION_MODEL_QDRANT_URL"
+    # Expert A and B live in different engines (different Qdrant versions).
+    fusion_model_qdrant_a_url: str = Field(
+        "http://qdrant-siglip-alpha", alias="FUSION_MODEL_QDRANT_A_URL"
     )
-    fusion_model_qdrant_port: int = Field(6333, alias="FUSION_MODEL_QDRANT_PORT")
-    fusion_model_qdrant_grpc_port: int = Field(
-        6334, alias="FUSION_MODEL_QDRANT_GRPC_PORT"
+    fusion_model_qdrant_a_port: int = Field(6333, alias="FUSION_MODEL_QDRANT_A_PORT")
+    fusion_model_qdrant_a_grpc_port: int = Field(
+        6334, alias="FUSION_MODEL_QDRANT_A_GRPC_PORT"
+    )
+    fusion_model_qdrant_b_url: str = Field(
+        "http://qdrant-jina", alias="FUSION_MODEL_QDRANT_B_URL"
+    )
+    fusion_model_qdrant_b_port: int = Field(6333, alias="FUSION_MODEL_QDRANT_B_PORT")
+    fusion_model_qdrant_b_grpc_port: int = Field(
+        6334, alias="FUSION_MODEL_QDRANT_B_GRPC_PORT"
     )
     # Expert A is the existing SigLIP2 collection; expert B does not exist yet.
     fusion_model_database_a: str = Field(
@@ -203,10 +225,16 @@ class Settings(BaseSettings):
     )
     submission_max_workers: int = Field(5, alias="SUBMISSION_MAX_WORKERS")
     submit_base_url: str = Field(
-        "https://eventretrieval.oj.io.vn", alias="SUBMIT_BASE_URL"
+        "https://eventretrieval.one", alias="SUBMIT_BASE_URL"
     )
     submit_username: str | None = Field(None, alias="SUBMIT_USERNAME")
     submit_password: str | None = Field(None, alias="SUBMIT_PASSWORD")
+    # Central submission service (one per team, on the server; see
+    # src/services/submission_service.py). How often the service re-reads the ACTIVE evaluation from DRES.
+    submit_poll_seconds: int = Field(10, alias="SUBMIT_POLL_SECONDS")
+    # A byte-identical answer to the same evaluation inside this window is
+    # refused team-wide (one task lasts at most 5 min).
+    submit_dedup_seconds: int = Field(300, alias="SUBMIT_DEDUP_SECONDS")
 
     # --- VLM extractor (pre-processing pipeline) ---
     prompt_title_extractor_path: str = Field(

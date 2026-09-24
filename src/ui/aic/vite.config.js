@@ -22,10 +22,17 @@ export default defineConfig({
     // hard-refresh cannot fix that, because the staleness is server-side.
     watch: { usePolling: true, interval: 300, binaryInterval: 1000 },
     // Vite refuses requests with an unrecognised Host header; allow the hosts
-    // this is actually reached by.
-    allowedHosts: ['aic_fe.serverhub.id.vn', 'desktop-cs8oa5q-6', '.ts.net'],
+    // this is actually reached by. The names below were the OLD machine's -- a
+    // migrated host 403s on its own hostname until it is added here, so the
+    // list is env-overridable rather than hard-coded.
+    //   VITE_ALLOWED_HOSTS=host-a,host-b,.example.ts.net
+    allowedHosts: (process.env.VITE_ALLOWED_HOSTS ||
+      'aic_fe.serverhub.id.vn,desktop-cs8oa5q-6,.ts.net,DESKTOP-BK06BOU'
+    ).split(',').map((h) => h.trim()).filter(Boolean),
     proxy: {
       '/hub': { target: BACKEND.hub, changeOrigin: true },
+      // Submission (DRES) is mounted on the hub app, so it proxies to the hub too.
+      '/submission': { target: BACKEND.hub, changeOrigin: true },
       '/result_manager': { target: BACKEND.resultManager, changeOrigin: true },
       // Media is large and range-requested; keep it streaming rather than buffered.
       // "/media/..." rather than "/img" or "/video": ad-blocker filter lists

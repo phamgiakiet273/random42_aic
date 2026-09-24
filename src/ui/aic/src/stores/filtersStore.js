@@ -3,12 +3,16 @@ import { create } from 'zustand'
 const DEFAULTS = {
   videoSearch: '',
   selectedVideos: [],
-  // Batch 0 only by default, matching the legacy default.
-  batches: [0],
+  // Both batches by default (user, 2026-09-24): batch 1 is the 2026 data (M/N/S),
+  // and the video picker only lists ticked batches.
+  batches: [0, 1],
   excludedFrames: [],
   s2tFilter: '',
   timeIn: '',
   timeOut: '',
+  // null = fall back to the catalog's default-checked subsets (subsets.json
+  // "default"). An array = the user's explicit checkbox selection.
+  subsets: null,
 }
 
 export const useFiltersStore = create((set) => ({
@@ -20,6 +24,7 @@ export const useFiltersStore = create((set) => ({
         ? state.batches.filter((v) => v !== value)
         : [...state.batches, value],
     })),
+  setSubsets: (names) => set({ subsets: names }),
   toggleVideo: (name) =>
     set((state) => ({
       selectedVideos: state.selectedVideos.includes(name)

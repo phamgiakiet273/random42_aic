@@ -15,6 +15,8 @@ import torch
 from PIL import Image
 from transformers import AutoModel, AutoProcessor
 
+from src.modules.clip_models.siglip2 import DTYPE_KWARG
+
 
 class JinaClipV2Model:
     """jinaai/jina-clip-v2 — XLM-RoBERTa text tower + EVA-02 image tower (1024-d).
@@ -45,8 +47,10 @@ class JinaClipV2Model:
             AutoModel.from_pretrained(
                 model_name,
                 trust_remote_code=True,
-                torch_dtype=torch.float16,
                 cache_dir=cache_dir,
+                # torch_dtype was renamed to dtype in transformers 4.56; the
+                # image pins 4.51.3 and the local env has 4.57.1.
+                **{DTYPE_KWARG: torch.float16},
             )
             .eval()
             .to(self._device)

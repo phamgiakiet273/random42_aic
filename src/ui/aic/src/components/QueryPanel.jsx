@@ -3,6 +3,7 @@ import { Search, Plus, X, Loader2 } from 'lucide-react'
 import { MODELS, SEARCH_TYPES } from '../api/search'
 import { useSearchStore } from '../stores/searchStore'
 import { useRunSearch } from '../hooks/useRunSearch'
+import { isEnter } from '../utils/keys'
 
 const TABS = [
   { value: SEARCH_TYPES.TEXT, label: 'Text' },
@@ -70,7 +71,7 @@ export default function QueryPanel() {
             value={store.text}
             onChange={(e) => store.setQuery({ text: e.target.value })}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
+              if (isEnter(e) && !e.shiftKey) {
                 e.preventDefault()
                 handleSubmit(e)
               }
@@ -102,7 +103,7 @@ export default function QueryPanel() {
                     setEvents(events.map((v, j) => (j === i ? e.target.value : v)))
                   }
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
+                    if (isEnter(e)) {
                       e.preventDefault()
                       handleSubmit(e)
                     }
@@ -114,9 +115,10 @@ export default function QueryPanel() {
                     className="btn btn-ghost btn-xs"
                     onClick={() => {
                       setEvents(events.filter((_, j) => j !== i))
-                      if (store.mainEventIndex >= events.length - 1) {
-                        store.setQuery({ mainEventIndex: 0 })
-                      }
+                      // keep the same main event: it shifts up if an earlier one goes
+                      const main = store.mainEventIndex
+                      if (i < main) store.setQuery({ mainEventIndex: main - 1 })
+                      else if (i === main) store.setQuery({ mainEventIndex: 0 })
                     }}
                     aria-label={`Remove event ${i + 1}`}
                   >
@@ -213,7 +215,7 @@ export default function QueryPanel() {
           <div className="alert alert-error text-sm py-2">{store.error}</div>
         )}
 
-        <button type="submit" className="btn btn-primary mt-auto gap-2" disabled={!canRun}>
+        <button type="submit" className="btn btn-primary mt-auto gap-2" disabled={!canRun} title="Search (Enter in the query box; Shift+Enter = new line)">
           {searching ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
           {searching ? 'Searching…' : 'Search'}
         </button>

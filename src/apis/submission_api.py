@@ -1,7 +1,7 @@
-"""DRES submission router — prefix `/submission`. Replaces `routes/submission_router.py`.
+"""DRES submission router -- prefix `/submission`. Replaces `routes/submission_router.py`.
 
-`SubmissionService.login()` is called from main.py's startup hook, not here —
-see the module docstring in src/services/submission_service.py.
+Served ONLY by the central submission service (SERVICE=submission). Hubs do not
+mount it; they forward `/submission/*` here (src/apis/submission_proxy.py).
 """
 
 from __future__ import annotations
@@ -19,45 +19,39 @@ from src.services.submission_service import DRESSubmitError, SubmissionService
 
 def build_router(service: SubmissionService) -> APIRouter:
     router = APIRouter(prefix="/submission", tags=["submission"])
+    async def _call(fn, request):
+        try:
+            return await fn(request)
+        except DRESSubmitError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
     @router.get("/ping")
     async def ping() -> APIResponse:
         return await service.ping()
+
+    @router.get("/get_session_and_eval")
+    async def get_session_and_eval() -> APIResponse:
+        return await service.get_session_and_eval()
 
     @router.get("/get_session_id")
     async def get_session_id() -> APIResponse:
         return await service.get_session_id()
 
     @router.get("/get_eval_id")
-    async def get_eval_id(session_id: str) -> APIResponse:
+    async def get_eval_id(session_id: str | None = None) -> APIResponse:
         return await service.get_eval_id(session_id)
 
     @router.post("/submit_kis")
     async def submit_kis(request: SubmitKISRequest) -> APIResponse:
-        try:
-            return await service.submit_kis(request)
-        except DRESSubmitError as exc:
-            raise HTTPException(
-                status_code=exc.status_code, detail=exc.message
-            ) from exc
+        return await _call(service.submit_kis, request)
 
     @router.post("/submit_qa")
     async def submit_qa(request: SubmitQARequest) -> APIResponse:
-        try:
-            return await service.submit_qa(request)
-        except DRESSubmitError as exc:
-            raise HTTPException(
-                status_code=exc.status_code, detail=exc.message
-            ) from exc
+        return await _call(service.submit_qa, request)
 
     @router.post("/submit_trake")
     async def submit_trake(request: SubmitTRAKERequest) -> APIResponse:
-        try:
-            return await service.submit_trake(request)
-        except DRESSubmitError as exc:
-            raise HTTPException(
-                status_code=exc.status_code, detail=exc.message
-            ) from exc
+        return await _call(service.submit_trake, request)
 
     @router.get("/relogin")
     async def relogin() -> APIResponse:

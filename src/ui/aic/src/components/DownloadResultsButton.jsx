@@ -10,6 +10,7 @@ export default function DownloadResultsButton({ records }) {
   const downloadLimit = useSettingsStore((s) => s.downloadLimit)
   const serverSideExport = useSettingsStore((s) => s.serverSideExport)
   const lastParams = useSearchStore((s) => s.lastParams)
+  const allRecords = useSearchStore((s) => s.records)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
@@ -17,7 +18,8 @@ export default function DownloadResultsButton({ records }) {
     setError(null)
     // The server export re-runs the query, so it cannot honour frames excluded
     // only in the browser. Fall back to client-side whenever that would differ.
-    const clientSideNeeded = !serverSideExport || !lastParams
+    const excludedSince = records.length !== allRecords.length
+    const clientSideNeeded = !serverSideExport || !lastParams || excludedSince
     if (!clientSideNeeded) {
       setBusy(true)
       try {

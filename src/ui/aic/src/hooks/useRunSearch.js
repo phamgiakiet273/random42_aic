@@ -14,10 +14,16 @@ export function useRunSearch() {
     if (store.searchType === SEARCH_TYPES.IMAGE)
       return { ...base, imagePath: store.imagePath }
     if (store.searchType === SEARCH_TYPES.TEMPORAL) {
+      // The backend splits the text on '.', so a '.' INSIDE an event ("2.5 kg")
+      // would make extra events; blank events are dropped, so the main index is
+      // re-counted over the events actually sent.
+      const events = store.events
+        .map((e, i) => ({ text: e.trim().replace(/\./g, ','), i }))
+        .filter((e) => e.text)
       return {
         ...base,
-        text: store.events.map((e) => e.trim()).filter(Boolean).join('. '),
-        mainEventIndex: Math.min(store.mainEventIndex, store.events.length - 1),
+        text: events.map((e) => e.text).join('. '),
+        mainEventIndex: Math.max(0, events.findIndex((e) => e.i === store.mainEventIndex)),
       }
     }
     return { ...base, utilityFeature: store.utilityFeature }

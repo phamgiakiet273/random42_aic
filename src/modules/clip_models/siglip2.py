@@ -23,7 +23,7 @@ def _dtype_kwarg() -> str:
     return "dtype" if (major, minor) >= (4, 56) else "torch_dtype"
 
 
-_DTYPE_KWARG = _dtype_kwarg()
+DTYPE_KWARG = _dtype_kwarg()
 
 MODEL_NAME = "google/siglip2-giant-opt-patch16-384"
 
@@ -68,7 +68,7 @@ class Siglip2Model:
         dtype = torch.float16 if self.device == "cuda" else torch.float32
         self.model = (
             AutoModel.from_pretrained(
-                MODEL_NAME, token=hf_token, **{_DTYPE_KWARG: dtype}
+                MODEL_NAME, token=hf_token, **{DTYPE_KWARG: dtype}
             )
             .eval()
             .to(self.device)

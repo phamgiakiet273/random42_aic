@@ -20,13 +20,16 @@ export const UTILITY_FEATURES = {
   UNIQUE: 'unique',
 }
 
-// Only siglip_alpha has a populated Qdrant collection on this deployment.
-// siglip_beta / metaclip / fusion_model are configured but have no index, so
-// they are listed as unavailable rather than offered and then failing.
+// MetaCLIP is gone: it never had an index here, while jina-clip-v2 does
+// (EXPERT_B_V1, 298k of the 872k keyframes, so it covers less of the corpus).
+// Unavailable entries are shown disabled rather than offered and then failing.
 export const MODELS = [
   { value: 'siglip_alpha', label: 'SigLIP2 Alpha', available: true },
+  // Wired and working, but its service is stopped: siglip_alpha + jina
+  // together pushed the host to ~800Mi free. Flip to true when the jina
+  // and qdrant-jina containers are running.
+  { value: 'jina', label: 'Jina CLIP v2', available: false },
   { value: 'siglip_beta', label: 'SigLIP2 Beta', available: false },
-  { value: 'metaclip', label: 'MetaCLIP', available: false },
   { value: 'fusion_model', label: 'Fusion (SigLIP2 + Jina)', available: false },
 ]
 
@@ -39,6 +42,7 @@ function searchFields({
   imagePath,
   k = 100,
   videoFilter,
+  subset,
   s2tFilter,
   timeIn,
   timeOut,
@@ -56,6 +60,7 @@ function searchFields({
     image_path: imagePath,
     k,
     video_filter: videoFilter,
+    subset,
     s2t_filter: s2tFilter,
     time_in: timeIn,
     time_out: timeOut,
@@ -119,6 +124,20 @@ export async function getNeighboringFrames(videoName, frameNum, k = 5) {
 export async function getVideoNames(batchIds = [0, 1]) {
   const data = await postForm('/hub/get_video_names_of_batch', { batch_id: batchIds })
   return Array.isArray(data) ? data : []
+}
+
+export async function getSubsets() {
+  // { name: { prefixes, label, default, desc } } — content subsets for scoping.
+  return get('/hub/subsets')
+}
+
+// Effective checked subset names: the user's explicit choice if they've touched
+// the checkboxes (`stored` is an array), otherwise the catalog's `default` set.
+export function effectiveSubsets(catalog, stored) {
+  if (Array.isArray(stored)) return stored
+  return Object.entries(catalog || {})
+    .filter(([, v]) => v.default)
+    .map(([name]) => name)
 }
 
 export function getMediaConfig() {

@@ -18,6 +18,9 @@ services:
     volumes:
       - ./src:/app/src
       - ${LOG_HOST_PATH}:/app/logs
+      # Live name_map.json (authoritative DRES mediaItemName source) -- read-only,
+      # stays current through re-ingests. glob = /app/data/*/_meta/name_map.json.
+      - ${NAME_MAP_META_HOST_PATH:-/mnt/f/workspace/aic_2026/1/_meta}:/app/data/1/_meta:ro
     ports: ["9021:9021"]
     restart: unless-stopped
 
@@ -35,6 +38,8 @@ services:
       VITE_PROXY_HUB: "http://hub:9021"
       VITE_PROXY_MEDIA: "${VITE_PROXY_MEDIA:-http://host.docker.internal:9027}"
       VITE_PROXY_RESULT_MANAGER: "${VITE_PROXY_RESULT_MANAGER:-http://host.docker.internal:9022}"
+      # hostnames the UI may be reached by; see vite.config.js
+      VITE_ALLOWED_HOSTS: "${VITE_ALLOWED_HOSTS:-aic_fe.serverhub.id.vn,desktop-cs8oa5q-6,.ts.net,DESKTOP-BK06BOU,localhost}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -47,3 +52,6 @@ services:
 
 volumes:
   aic_node_modules:
+    # pre-seeded from the host copy so the frontend starts without the network
+    external: true
+    name: aic2026_aic_node_modules

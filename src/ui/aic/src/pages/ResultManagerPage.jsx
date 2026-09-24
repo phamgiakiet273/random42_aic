@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useResultStore } from '../resultManager/store'
 import {
-  rowsFromCsv, rowSummary, buildSubmissionCsv, MAX_ROWS, frameBase,
+  rowsFromCsv, modeFromFilename, rowSummary, buildSubmissionCsv, MAX_ROWS, frameBase,
 } from '../resultManager/csv'
 import ManagedRowCard from '../resultManager/ManagedRowCard'
 import {
@@ -25,14 +25,13 @@ function Section({ title, children }) {
 
 export default function ResultManagerPage() {
   const store = useResultStore()
-  const { rows, mode, selected, thumbnailSize, filename } = store
+  const { rows, mode, selected, thumbnailSize, filename, expectedEventCount } = store
   const [previewIndex, setPreviewIndex] = useState(null)
   const [dragging, setDragging] = useState(null)
   const [dragOver, setDragOver] = useState(null)
   const [notice, setNotice] = useState(null)
-  const fileRef = useRef(null)
 
-  const summary = rowSummary(rows, mode)
+  const summary = rowSummary(rows, mode, expectedEventCount)
   const previewRow = previewIndex != null ? rows[previewIndex] : null
 
   const { data: previewFps } = useQuery({
@@ -41,24 +40,33 @@ export default function ResultManagerPage() {
     enabled: Boolean(previewRow?.video_name),
     retry: false,
   })
+  const previewRecord = useMemo(
+    () =>
+      previewRow && {
+        video_name: previewRow.video_name,
+        keyframe_id: frameBase(previewRow.frame_ids[0] || ''),
+        fps: previewFps ?? null,
+        score: 0,
+        related_start_frame: frameBase(previewRow.frame_ids[0] || ''),
+        related_end_frame: frameBase(previewRow.frame_ids.at(-1) || ''),
+      },
+    [previewRow, previewFps],
+  )
+  const previewUrls = useMemo(
+    () =>
+      previewRow && {
+        frame: resultFrameUrl(previewRow.video_name, previewRow.frame_ids[0]),
+        video: resultVideoUrl(previewRow.video_name),
+      },
+    [previewRow],
+  )
 
-  // "M" marks the frame currently showing in the preview video.
-  useEffect(() => {
-    if (!previewRow) return
-    const onKey = (e) => {
-      if (e.key.toLowerCase() !== 'm') return
-      const video = document.querySelector('dialog[open] video')
-      if (!video) return
-      const fps = previewFps || 25
-      store.addMark(previewRow.video_name, Math.round(video.currentTime * fps))
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [previewRow, previewFps, store])
+  // Marking ("M" / the modal's Mark button) lives in FrameDetailModal, which
+  // owns the player and refuses to mark when fps is unknown.
 
   async function handleUpload(file, insertIndex) {
     const text = await file.text()
-    const { rows: parsed, detected } = rowsFromCsv(text, mode)
+    const { rows: parsed, detected, skippedHeader } = rowsFromCsv(text, mode, modeFromFilename(file.name))
     if (!parsed.length) {
       setNotice({ err: true, text: 'No usable rows. Expected "<video_name>,<frame_idx>" with no header row.' })
       return
@@ -70,7 +78,14 @@ export default function ResultManagerPage() {
     store.update({
       filename: file.name.replace(/\.csv$/i, '').replace(/-(kis|qa|trake)$/i, ''),
     })
-    setNotice({ err: false, text: `Loaded ${parsed.length} rows${detected ? ` (detected ${detected.toUpperCase()})` : ''}.` })
+    setNotice({
+      err: skippedHeader || !detected,
+      text:
+        `Loaded ${parsed.length} rows` +
+        (detected ? ` (${detected.toUpperCase()})` : ` as ${mode.toUpperCase()}: the file name has no -kis/-qa/-trake and the content is ambiguous; check the mode`) +
+        (skippedHeader ? '; skipped a header row (a submission file must not have one)' : '') +
+        '.',
+    })
   }
 
   function handleDownload() {
@@ -80,7 +95,7 @@ export default function ResultManagerPage() {
       if (!window.confirm(`A submission CSV may hold at most ${MAX_ROWS} rows; this has ${rows.length}.\n\nExport only the first ${MAX_ROWS}?`)) return
       out = rows.slice(0, MAX_ROWS)
     }
-    const { csv, problems } = buildSubmissionCsv(out, mode)
+    const { csv, problems } = buildSubmissionCsv(out, mode, expectedEventCount)
     if (problems.length) {
       const shown = problems.slice(0, 10).join('\n')
       const more = problems.length > 10 ? `\n...and ${problems.length - 10} more` : ''
@@ -130,7 +145,7 @@ export default function ResultManagerPage() {
                 onChange={(e) => store.update({ thumbnailSize: Number(e.target.value) })} />
             </label>
             <span className="flex-1" />
-            <input ref={fileRef} className="input input-sm input-bordered w-44"
+            <input className="input input-sm input-bordered w-44"
               value={filename} onChange={(e) => store.update({ filename: e.target.value })} />
             <span className="text-xs text-base-content/50">-{mode}.csv</span>
             <button type="button" className="btn btn-sm btn-primary" onClick={handleDownload}>
@@ -162,6 +177,7 @@ export default function ResultManagerPage() {
                   onToggle={store.toggleSelected}
                   onPreview={setPreviewIndex}
                   onAnswer={(idx, answer) => store.updateRow(idx, { answer })}
+                  onUpdateFrames={(idx, frame_ids) => store.updateRow(idx, { frame_ids })}
                   onDragStart={setDragging}
                   onDragOver={setDragOver}
                   onDrop={(to) => { if (dragging != null && dragging !== to) store.moveRow(dragging, to) }}
@@ -175,19 +191,14 @@ export default function ResultManagerPage() {
         </div>
       </div>
 
+      {/* keyed per row: a fresh viewer each time (a selected mark must not carry
+          over to another video). record/urls are memoised: a new object every
+          render re-ran the viewer's open effect, snapping the frame back. */}
       <FrameDetailModal
-        record={previewRow && {
-          video_name: previewRow.video_name,
-          keyframe_id: frameBase(previewRow.frame_ids[0] || ''),
-          fps: previewFps ?? null,
-          score: 0,
-          related_start_frame: frameBase(previewRow.frame_ids[0] || ''),
-          related_end_frame: frameBase(previewRow.frame_ids.at(-1) || ''),
-        }}
-        urls={previewRow && {
-          frame: resultFrameUrl(previewRow.video_name, previewRow.frame_ids[0]),
-          video: resultVideoUrl(previewRow.video_name),
-        }}
+        key={previewIndex == null ? 'closed' : `row-${previewIndex}`}
+        record={previewRecord}
+        urls={previewUrls}
+        markMode="csv"
         onClose={() => setPreviewIndex(null)}
       />
     </main>

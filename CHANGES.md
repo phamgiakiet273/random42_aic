@@ -83,5 +83,8 @@ Fixed after your review:
 - Remote video is slow: files are non-faststart (moov at the end of 80–280MB),
   and nginx `?start=` 500s because 9p `msize=65536` short-reads a 1MB `pread`.
   Options: faststart remux, move videos to ext4, or nginx as single origin.
-- Batch-1 (`K*`) videos absent from disk — thumbnails work, playback 404s.
+- Batch 1 is now the AIC-2026 set (`N` traffic CCTV, no audio; `S01` cycling
+  broadcast, has audio) — re-ingested and served; frames + videos on disk
+  (`data/1`, `/mnt/f/workspace/aic_2026/1`). The old `K*` batch-1 (no frames)
+  is gone. See `RANDOM42_OPS.md` §6.
 - Only `siglip_alpha` has an index.

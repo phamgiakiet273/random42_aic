@@ -1,0 +1,27 @@
+# Remote-access gateway + its ngrok tunnel. Kept separate from
+# docker-compose-server.yml so the server stack stays untouched; it just joins
+# the same network. Started by `./stack.sh start --remote`.
+#
+#   public URL: https://${NGROK_DOMAIN}   (team ngrok account; NGROK_* in .env)
+services:
+  gateway:
+    image: nginx:alpine
+    ports: ["${GATEWAY_PORT:-9090}:80"]
+    volumes:
+      - ./nginx/gateway.conf:/etc/nginx/conf.d/default.conf:ro
+      # the built UI (./stack.sh ui-build), served at / for remote teammates
+      - ./src/ui/aic/dist:/usr/share/nginx/html:ro
+    restart: unless-stopped
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    depends_on: [gateway]
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:?NGROK_AUTHTOKEN must be set in .env}
+    command: ["http", "--url=${NGROK_DOMAIN:?NGROK_DOMAIN must be set in .env}", "gateway:80", "--log", "stdout"]
+    restart: unless-stopped
+
+networks:
+  default:
+    name: aic2026_default
+    external: true

@@ -10,6 +10,9 @@ x-app: &app
     # `docker compose restart <service>` instead of a rebuild. Read-only.
     - ./src:/app/src:ro
     - ${DATASET_HOST_PATH}:/app/data:ro
+    # Source videos live on F: (different filesystem from the E: dataset
+    # root, so they cannot be hard-linked in). Nested bind mount instead.
+    - ${VIDEO_HOST_PATH}:/app/data/original:ro
     - ${MODEL_CACHE_HOST_PATH}:/app/model-cache
     - ${LOG_HOST_PATH}:/app/logs
     # QdrantSearchClient memoises a walk of the keyframe tree here; without a
@@ -96,6 +99,20 @@ services:
   # Matches the engine this index was created and served by. Do NOT downgrade
   # the image: storage format is written by the engine version, and an older
   # engine may refuse or corrupt it. Exactly one engine may hold this directory.
+  # jina-clip-v2 served as a plain CLIP variant (also expert B for fusion).
+  jina:
+    <<: *app
+    environment:
+      SERVICE: jina
+    ports: ["9033:9033"]
+    depends_on:
+      qdrant-jina:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices: [{driver: nvidia, count: 1, capabilities: [gpu]}]
+
   qdrant-siglip-alpha:
     image: qdrant/qdrant:v1.15.5-gpu-nvidia
     environment:
@@ -111,6 +128,26 @@ services:
     restart: unless-stopped
     healthcheck:
       # The official image has no curl; bash's TCP support hits /readyz.
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333 && printf \"GET /readyz HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n\" >&3 && grep -q \"200\" <&3'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # Second engine, for the jina (expert B) collection only.
+  #
+  # It cannot share the engine above: EXPERT_B_V1 was written by 1.19 and uses
+  # an InRamMmap segment variant 1.15.5 rejects, while PUMPKING_SIGLIP_V2 uses
+  # RocksDB payload indices that 1.17+ removed. No single version reads both,
+  # and reconciling them means migrating 1.15 -> 1.16 -> 1.17 -> 1.18 -> 1.19,
+  # one-way at every hop. Fusion already takes two independent Qdrant clients,
+  # so running two engines migrates nothing.
+  qdrant-jina:
+    image: qdrant/qdrant:v1.19.0
+    volumes: ["${QDRANT_JINA_STORAGE_HOST_PATH}:/qdrant/storage"]
+    ports: ["6335:6333", "6336:6334"]
+    restart: unless-stopped
+    healthcheck:
       test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333 && printf \"GET /readyz HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n\" >&3 && grep -q \"200\" <&3'"]
       interval: 10s
       timeout: 5s
@@ -144,5 +181,6 @@ services:
     ports: ["9027:80"]
     volumes:
       - ${DATASET_HOST_PATH}:/data:ro
+      - ${VIDEO_HOST_PATH}:/data/original:ro
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
     restart: unless-stopped

@@ -4,7 +4,8 @@ const DEFAULTS = {
   returnS2t: true,
   // `returnObject` is gone: doc comment [k]. The field was empty on all
   // 872,631 indexed points, so the backend no longer returns or accepts it.
-  frameClassFilter: [],
+  // Only frame classes 2 and 3 are shown by default (untick in Settings to see 0 / 1).
+  frameClassFilter: [2, 3],
   sortToNews: true,
   autoTranslate: false,
   immediateRerun: false,
@@ -15,6 +16,8 @@ const DEFAULTS = {
   downloadLimit: 100,
   // Server-rendered CSV (GET /hub/download) vs building it in the browser.
   serverSideExport: true,
+  // DRES submit: one-click direct by default; on = ask to confirm each submit.
+  confirmSubmit: false,
 }
 
 export const useSettingsStore = create((set) => ({
