@@ -1,0 +1,5 @@
+# Tunnel agent config: connect through ngrok's Mumbai edge (docker-compose-gateway.yml).
+# The authtoken comes from NGROK_AUTHTOKEN, not from this file.
+version: 3
+agent:
+  connect_url: connect.in.ngrok-agent.com:443

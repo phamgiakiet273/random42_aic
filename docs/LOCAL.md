@@ -173,12 +173,14 @@ python3 tools/ui_check.py https://$NGROK_DOMAIN   # real browser, every UI featu
 ```
 
 - ngrok settings: `NGROK_AUTHTOKEN`, `NGROK_DOMAIN` in `.env` (gitignored).
-- The URL is served by **two pooled ngrok agents** (`--pooling-enabled`): `ngrok` through
-  the nearest edge (Singapore) and `ngrok-jp` through Tokyo (`ngrok/jp.yml`). Each agent's
-  session to ngrok drops every hour or two (Vietnam's links abroad are degraded since the
-  Aug-2026 cable faults); ngrok then routes to the other one. The UI also resends a failed
-  read (search, video list, CSV) once; submissions are never resent. Drops so far:
-  `docker logs aic2026-ngrok-1 2>&1 | grep -c "heartbeat timeout"` (and `aic2026-ngrok-jp-1`).
+- The URL is served by **three pooled ngrok agents** (`--pooling-enabled`), each through a
+  different edge: `ngrok` (nearest, Singapore), `ngrok-2` (Tokyo, `ngrok/jp.yml`), `ngrok-3`
+  (Mumbai, `ngrok/in.yml`). Sessions drop now and then (Vietnam's links abroad are degraded
+  since the Aug-2026 cable faults; at evening peak the Singapore one every 10-15 min, and two
+  agents on the same route dropped together), and ngrok routes to the others meanwhile. The
+  UI gives each read (search, video list, CSV) 25 s and retries a failed / stuck one up to
+  twice, and reloads a failed thumbnail once; submissions are never resent. Drops:
+  `for c in aic2026-ngrok-1 aic2026-ngrok-2-1 aic2026-ngrok-3-1; do docker logs $c 2>&1 | grep -c "heartbeat timeout"; done`.
 - SSH for teammates (optional): this machine runs **no SSH server** (Tailscale SSH is off,
   no sshd). To offer the SSH option, enable one (Tailscale SSH: `sudo tailscale set --ssh`,
   or openssh-server in WSL) and give each teammate a login; their tunnel is
