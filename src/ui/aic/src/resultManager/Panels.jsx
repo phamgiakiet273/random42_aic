@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useResultStore } from './store'
 import { MODES, MODE_HINT, frameLabel } from './csv'
+import { isEnter } from '../utils/keys'
 
 /** Where new rows land: start, end, or a 1-based position. */
 function usePosition(rowCount) {
@@ -107,7 +108,7 @@ export function ManualEntryPanel() {
         <input className="input input-sm input-bordered flex-1 min-w-40"
           placeholder={mode === 'trake' ? '1200, 1850, 2100' : '1200'}
           value={frames} onChange={(e) => setFrames(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && submit()} />
+          onKeyDown={(e) => isEnter(e) && submit()} />
         <button type="button" className="btn btn-sm btn-primary" onClick={submit}>Add</button>
       </div>
       <PositionPicker pos={pos} />

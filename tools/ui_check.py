@@ -16,7 +16,7 @@ from playwright.sync_api import sync_playwright
 
 BASE = (sys.argv[1] if len(sys.argv) > 1 else "http://localhost:10000").rstrip("/")
 SHOTS = os.environ.get("SHOTS", os.path.join(tempfile.gettempdir(), "aic_ui_check"))
-SAMPLE_JPG = "/mnt/e/workspace/AIC_2026/batch1/work/keyframes/Keyframes_M05/keyframes/M05_V001/00042.jpg"
+SAMPLE_JPG = "/mnt/e/workspace/AIC_2026/batch1/work/keyframes/Keyframes_M05/keyframes/M05_V001/01698.jpg"  # frame_class 3: shown under the default class filter (2, 3)
 os.makedirs(SHOTS, exist_ok=True)
 results, console_errors, bad_responses = [], [], []
 
@@ -28,7 +28,7 @@ RM_THUMBS_JS = """() => [...document.images].filter(i => i.src.includes('/result
 
 def wait_scope(pg):
     """Ticking a batch reloads the video list; searching before it settles uses the old scope."""
-    pg.wait_for_function("() => !document.body.innerText.includes('Loading batch scope')", timeout=60000)
+    pg.wait_for_function("() => !document.querySelector('[aria-busy=true]')", timeout=60000)
 
 
 def check(name, ok, detail=""):
@@ -58,11 +58,55 @@ def run_search(pg):
     return ri.value.status
 
 
+def open_viewer(pg):
+    """The frame viewer dialog, once its <video> has metadata (and the timeline has drawn)."""
+    dlg = pg.locator("dialog[open]").filter(has=pg.locator("video"))
+    dlg.wait_for(timeout=10000)
+    pg.wait_for_function("() => { const v=document.querySelector('dialog[open] video'); return v && v.readyState>=1 }",
+                         timeout=30000)
+    pg.wait_for_timeout(1000)
+    return dlg
+
+
+def close_viewer(pg):
+    pg.locator("dialog[open]").get_by_role("button", name="Close", exact=True).first.click()
+    pg.wait_for_function("() => !document.querySelector('dialog[open] video')", timeout=10000)
+
+
+def active_tab(dlg):
+    tab = dlg.locator("[role=tab].tab-active")
+    return re.sub(r"\s*\(\d+\)$", "", tab.inner_text().strip()) if tab.count() else None
+
+
+def markers(pg):
+    """TRAKE markers on the wavesurfer timeline (they live in its shadow DOM)."""
+    return pg.locator('dialog[open] [part~="marker"]').count()
+
+
+def _verdict(pg):
+    """The last submit message: inside the open viewer (the page behind a modal is
+    inert), else the store's toast (the one with a dismiss button)."""
+    inside = pg.locator("dialog[open] [role=status]")
+    return inside if pg.locator("dialog[open]").count() else pg.locator(".toast .alert:has(button.btn-ghost)")
+
+
+def last_verdict(pg):
+    el = _verdict(pg).locator("span").first
+    return el.inner_text() if el.count() else None
+
+
+def clear_verdict(pg):
+    btn = _verdict(pg).locator("button").first
+    if btn.count(): btn.click()
+
+
 def step(name, fn, pg):
     try:
         fn()
     except Exception as e:
-        check(name, False, f"{type(e).__name__}: {str(e).splitlines()[0][:140]}")
+        lines = str(e).splitlines()
+        why = [l.strip() for l in lines if re.search(r"intercepts|not enabled|not visible|not stable|resolved to", l)][-2:]
+        check(name, False, f"{type(e).__name__}: {lines[0][:140]} {' | '.join(why)[:300]}")
     shot(pg, re.sub(r"\W+", "_", name)[:40])
 
 
@@ -117,7 +161,7 @@ def main():
 
         # 4. pick one video in Included videos
         def s4():
-            # the picker lists only the ticked batches -- Batch 1 (M/N/S) is off by default
+            # the picker lists only the ticked batches (Batch 1 = M/N/S, ticked by default)
             pg.get_by_label("Batch 1").check(); wait_scope(pg)
             pg.get_by_placeholder("Search videos...").fill("M05_V001")
             pg.locator("label", has_text=re.compile(r"^\s*M05_V001\s*$")).first.click()
@@ -164,37 +208,39 @@ def main():
             pg.get_by_role("button", name=re.compile("Add event")).click()
             pg.get_by_placeholder("Event 2").fill("a map on the screen")
             st = run_search(pg); wait_thumbs(pg)
-            chains = pg.locator('[title="Load this chain as the TRAKE sequence in the submission bar"]')
+            chains = pg.locator('[title="Open this chain on the TRAKE timeline (events pre-marked)"]')
             n = chains.count()
             check("temporal search (chain rows)", st == 200 and n > 0, f"{n} chains")
             chains.first.click()
-            bar = pg.get_by_text(re.compile(r"^[A-Z]\d+_V\d+: \d+")).first.inner_text()
-            enabled = pg.get_by_role("button", name="Submit TRAKE").is_enabled()
-            check("Use as TRAKE -> submission bar", enabled and ":" in bar, bar)
+            dlg = open_viewer(pg)
+            events = dlg.locator("ol li").count()
+            check("Use as TRAKE -> viewer, TRAKE tab, chain pre-marked on the timeline",
+                  active_tab(dlg) == "TRAKE" and events >= 1 and markers(pg) == events,
+                  f"tab {active_tab(dlg)!r}, {events} events, {markers(pg)} markers")
+            close_viewer(pg)
         step("temporal", s8, pg)
 
-        # 9. back to text; KIS mode
+        # 9. back to text (there is no submit mode any more)
         def s9():
             pg.get_by_role("tab", name="Text", exact=True).click()
-            pg.get_by_role("button", name="KIS", exact=True).click()
             q().fill("a bus turning at an intersection")
             run_search(pg); th = wait_thumbs(pg)
-            check("text search again (KIS mode)", len(th) > 0, f"{len(th)} results")
-        step("text kis", s9, pg)
+            check("text search again", len(th) > 0, f"{len(th)} results")
+        step("text again", s9, pg)
 
-        # 10. frame viewer: video plays at the frame, neighbouring frames
+        # 10. frame viewer: opens PAUSED at the frame (no autoplay), KIS panel first,
+        # timeline + neighbouring frames
         def s10():
             pg.locator("img[src*='/media/frames/']").first.click()
-            dlg = pg.locator("dialog[open]")
-            dlg.wait_for(timeout=10000)
-            pg.wait_for_function("() => { const v=document.querySelector('dialog[open] video'); return v && v.readyState>=1 }",
-                                 timeout=30000)
+            dlg = open_viewer(pg)
             info = pg.evaluate("() => { const v=document.querySelector('dialog[open] video'); "
-                               "return {t: v.currentTime, d: v.duration, src: v.currentSrc.slice(-40)} }")
+                               "return {t: v.currentTime, d: v.duration, paused: v.paused, src: v.currentSrc.slice(-40)} }")
             neigh = dlg.get_by_text("Neighbouring frames").count() > 0
             check("frame viewer: video loads + seeks, neighbours", info["d"] > 0 and neigh,
                   f"t={info['t']:.1f}s of {info['d']:.0f}s {info['src']}")
-            dlg.get_by_role("button", name="Close").first.click()
+            check("frame viewer: no autoplay, KIS panel first", info["paused"] and active_tab(dlg) == "KIS",
+                  f"paused={info['paused']}, tab {active_tab(dlg)!r}")
+            close_viewer(pg)
         step("frame viewer", s10, pg)
 
         # 11. thumbnail actions: exclude shot, browse shot, similar frames
@@ -220,32 +266,81 @@ def main():
             check("find similar frames", ri.value.status == 200, f"HTTP {ri.value.status}")
         step("thumbnail actions", s11, pg)
 
-        # 12. DRES submit paths -- only while no evaluation is active. The UI then
-        # refuses client-side ("no ACTIVE evaluation") and sends nothing.
+        # 12. DRES submit paths: a card's K / Q / TR and the viewer's KIS / Q&A / TRAKE
+        # panel. Only while no evaluation is active: the UI then refuses client-side
+        # ("no ACTIVE evaluation") and sends nothing.
         def s12():
             if not no_active_eval:
-                check("submit KIS / Q&A / confirm", None, "an evaluation is ACTIVE -- not clicking Submit"); return
+                check("submit KIS / Q&A / TRAKE / confirm", None, "an evaluation is ACTIVE -- not clicking Submit"); return
             sent = []
             pg.on("request", lambda r: sent.append(r.url) if "/submission/submit" in r.url else None)
             q().fill("a bus turning at an intersection"); run_search(pg); wait_thumbs(pg)
+            card_btn = lambda label: pg.locator(f'button[aria-label="{label}"]').first
+
+            def refused(name, act):
+                clear_verdict(pg); act(); pg.wait_for_timeout(1500)
+                v = last_verdict(pg) or ""
+                check(name, "active evaluation" in v.lower() and not sent, f"sent={len(sent)}, toast {v[:50]!r}")
+
+            # card K: one click
             pg.locator("img[src*='/media/frames/']").first.hover()
-            pg.locator('[title="Submit this frame to DRES (KIS)"]').first.click(force=True)
-            pg.wait_for_timeout(1500)
-            msg = pg.get_by_text(re.compile("no ACTIVE evaluation")).count()
-            check("one-click KIS submit (no active eval: refused, nothing sent)", msg > 0 and not sent, f"sent={len(sent)}")
-            pg.get_by_role("button", name="Q&A", exact=True).click()
-            pg.get_by_placeholder("Q&A answer…").fill("5")
-            pg.locator("img[src*='/media/frames/']").first.hover()
-            pg.locator('[title="Submit this frame to DRES (QA)"]').first.click(force=True)
-            pg.wait_for_timeout(1500)
-            check("one-click Q&A submit (no active eval: refused, nothing sent)", not sent, f"sent={len(sent)}")
-            pg.get_by_role("button", name="KIS", exact=True).click()
+            refused("card K = KIS (no active eval: refused, nothing sent)",
+                    lambda: card_btn("Submit this frame to DRES as KIS").click(force=True))
+
+            # card Q: a dialog with an EMPTY answer; Enter submits
+            def card_q():
+                card_btn("Q&A: answer for this frame").click(force=True)
+                box = pg.locator("dialog[open]").get_by_placeholder("Answer…")
+                box.wait_for(timeout=5000)
+                empty = box.input_value() == "" and box.evaluate("e => e === document.activeElement")
+                box.fill("5"); box.press("Enter")
+                return empty
+            empty = [None]
+            refused("card Q = Q&A dialog, Enter submits (refused, nothing sent)", lambda: empty.__setitem__(0, card_q()))
+            card_btn("Q&A: answer for this frame").click(force=True)
+            again = pg.locator("dialog[open]").get_by_placeholder("Answer…").input_value()
+            pg.keyboard.press("Escape")
+            check("Q&A answer box starts empty + focused, every time", empty[0] and again == "", f"reopened with {again!r}")
+
+            # card TR: the viewer on an EMPTY TRAKE timeline, paused
+            card_btn("TRAKE: mark events on this video").click(force=True)
+            dlg = open_viewer(pg)
+            paused = pg.evaluate("document.querySelector('dialog[open] video').paused")
+            check("card TR = viewer on TRAKE, no events, paused", active_tab(dlg) == "TRAKE" and markers(pg) == 0 and paused,
+                  f"tab {active_tab(dlg)!r}, {markers(pg)} markers, paused={paused}")
+            # mark with the keyboard: M, 2 s later, M
+            dlg.locator(".modal-box").click(position={"x": 5, "y": 5})  # keys go to the dialog, not an input
+            pg.keyboard.press("m"); pg.keyboard.press("ArrowRight"); pg.keyboard.press("ArrowRight")
+            pg.wait_for_timeout(400); pg.keyboard.press("m"); pg.wait_for_timeout(600)
+            ev = dlg.locator("ol li").all_inner_texts()
+            check("M marks the frame showing now (2 events, 2 markers)", len(ev) == 2 and markers(pg) == 2, [e.split()[1] for e in ev])
+            # drag the second marker to the right: its event moves
+            box = pg.locator('dialog[open] [part~="marker"]').nth(1).bounding_box()
+            pg.mouse.move(box["x"] + 1, box["y"] + box["height"] / 2); pg.mouse.down()
+            pg.mouse.move(box["x"] + 40, box["y"] + box["height"] / 2, steps=8); pg.mouse.up(); pg.wait_for_timeout(800)
+            ev2 = dlg.locator("ol li").all_inner_texts()
+            check("drag a marker on the timeline moves its event", len(ev2) == 2 and ev2[1] != ev[1],
+                  f"{ev[1].split()[1]} -> {ev2[1].split()[1] if len(ev2) > 1 else '?'}")
+            refused("Submit TRAKE (refused, nothing sent)",
+                    lambda: dlg.get_by_role("button", name="Submit TRAKE").click())
+            # the viewer's own KIS and Q&A panels
+            dlg.get_by_role("tab", name="KIS").click()
+            refused("viewer: Submit KIS (refused, nothing sent)", lambda: dlg.get_by_role("button", name="Submit KIS").click())
+            dlg.get_by_role("tab", name="Q&A").click()
+            qa_empty = dlg.get_by_placeholder("Answer…").input_value() == ""
+            dlg.get_by_placeholder("Answer…").fill("7")
+            refused("viewer: Submit Q&A (refused, nothing sent)", lambda: dlg.get_by_role("button", name="Submit Q&A").click())
+            check("viewer: Q&A answer starts empty", qa_empty)
+            close_viewer(pg)
+
+            # confirm toggle: a dialog before anything is sent (dismissed here)
             pg.locator('[title="Confirm each submit before sending to DRES"] input').check()
+            n = len(dialogs)
             pg.locator("img[src*='/media/frames/']").first.hover()
-            pg.locator('[title="Submit this frame to DRES (KIS)"]').first.click(force=True)
+            card_btn("Submit this frame to DRES as KIS").click(force=True)
             pg.wait_for_timeout(1000)
-            check("confirm toggle asks first (dismissed -> nothing sent)", dialogs and not sent,
-                  f"dialog: {dialogs[-1][:40] if dialogs else None}")
+            check("confirm toggle asks first (dismissed -> nothing sent)", len(dialogs) > n and not sent,
+                  f"dialog: {dialogs[-1][:40] if len(dialogs) > n else None}")
             pg.locator('[title="Confirm each submit before sending to DRES"] input').uncheck()
         step("submission", s12, pg)
 
@@ -263,6 +358,14 @@ def main():
             th = pg.evaluate(RM_THUMBS_JS)
             check("Result Manager: load CSV, rows + thumbnails", len(th) > 0 and all(t["ok"] for t in th[:5]),
                   f"{len(th)} rows, {sum(t['ok'] for t in th[:5])}/5 first thumbs")
+            # a row's preview = the same viewer, marks-for-CSV only (no DRES tabs)
+            pg.locator("img[src*='/result_manager/send_img']").first.click()
+            dlg = open_viewer(pg)
+            has_marks = dlg.get_by_role("button", name=re.compile(r"^Mark frame")).count() > 0
+            check("Result Manager preview: viewer with the TRAKE timeline, no DRES tabs",
+                  has_marks and dlg.locator("[role=tab]").count() == 0 and pg.evaluate(
+                      "document.querySelector('dialog[open] video').paused"))
+            close_viewer(pg)
             pg.get_by_role("link", name="Search Page").click()
         step("csv + result manager", s13, pg)
 

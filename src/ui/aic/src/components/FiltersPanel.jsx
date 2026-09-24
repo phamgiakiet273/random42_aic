@@ -1,9 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { useRunSearch } from '../hooks/useRunSearch'
-import { getVideoNames, getSubsets, effectiveSubsets } from '../api/search'
+import { getVideoNames, getSubsets, effectiveSubsets, SEARCH_TYPES } from '../api/search'
+import { useSearchStore } from '../stores/searchStore'
 import { useFiltersStore } from '../stores/filtersStore'
 import { useExcludedFramesStore, frameKey } from '../stores/excludedFramesStore'
 import { videoStem } from '../api/media'
+import { isEnter } from '../utils/keys'
 
 const BATCHES = [0, 1]
 
@@ -14,9 +16,10 @@ const NO_NAMES = []
 
 export default function FiltersPanel() {
   const filters = useFiltersStore()
+  const isBrowse = useSearchStore((s) => s.searchType) === SEARCH_TYPES.SCROLL
   const { run } = useRunSearch()
   const onEnter = (e) => {
-    if (e.key === 'Enter') {
+    if (isEnter(e)) {
       e.preventDefault()
       run()
     }
@@ -52,7 +55,6 @@ export default function FiltersPanel() {
         : [...checkedSubsets, name],
     )
 
-  const batchPrefixes = videoNames.filter((name) => !name.includes('_'))
   const needle = filters.videoSearch.toLowerCase()
   const visibleVideoNames = videoNames.filter((name) => name.toLowerCase().includes(needle))
 
@@ -60,6 +62,59 @@ export default function FiltersPanel() {
     <div className="card bg-base-100 shadow-sm">
       <div className="card-body gap-4">
         <h2 className="card-title text-base">Filters</h2>
+
+        <div>
+          <p className="text-xs uppercase tracking-wide text-base-content/60 mb-1">
+            Batch
+          </p>
+          <div className="flex gap-3">
+            {BATCHES.map((value) => (
+              <label key={value} className="label cursor-pointer gap-1">
+                <input
+                  type="checkbox"
+                  className="checkbox checkbox-sm"
+                  checked={filters.batches.includes(value)}
+                  onChange={() => filters.toggleBatch(value)}
+                />
+                <span className="label-text">Batch {value}</span>
+              </label>
+            ))}
+          </div>
+          {isError && (
+            <p className="text-[10px] text-warning mt-1">
+              Batch scoping is OFF: the video-name list could not be loaded, so
+              searches will span every batch.
+            </p>
+          )}
+        </div>
+
+        <div>
+          <p className="text-xs uppercase tracking-wide text-base-content/60 mb-1">
+            Content
+          </p>
+          <div className="grid grid-cols-2 gap-x-2">
+            {Object.entries(subsetCatalog).map(([name, info]) => (
+              <label
+                key={name}
+                className="label cursor-pointer justify-start gap-2 px-1 py-0.5"
+                title={info.desc}
+              >
+                <input
+                  type="checkbox"
+                  className="checkbox checkbox-xs"
+                  checked={checkedSubsets.includes(name)}
+                  onChange={() => toggleSubset(name)}
+                />
+                <span className="label-text text-xs">{info.label || name}</span>
+              </label>
+            ))}
+          </div>
+          <p className="text-[10px] text-base-content/50 mt-1">
+            {checkedSubsets.length
+              ? `Searching: ${checkedSubsets.join(', ')}. Unchecked content is excluded.`
+              : 'No content type checked — falling back to batch scope.'}
+          </p>
+        </div>
 
         <div>
           <p className="text-xs uppercase tracking-wide text-base-content/60 mb-1">
@@ -73,7 +128,7 @@ export default function FiltersPanel() {
             value={filters.videoSearch}
             onChange={(e) => filters.update({ videoSearch: e.target.value })}
           />
-          <div className="border border-base-300 rounded-lg max-h-40 overflow-y-auto">
+          <div className="border border-base-300 rounded-lg max-h-40 overflow-y-auto" aria-busy={isLoading}>
             {isLoading && <p className="text-xs p-2 text-base-content/50">Loading…</p>}
             {isError && (
               <p className="text-xs p-2 text-error">
@@ -97,33 +152,64 @@ export default function FiltersPanel() {
                 </label>
               ))}
           </div>
-          {isError ? (
-            <p className="text-[10px] text-warning mt-2">
-              Batch scoping is OFF: the video-name list could not be loaded, so
-              searches will span every batch.
-            </p>
-          ) : (
+          {filters.selectedVideos.length > 0 && (
             <p className="text-[10px] text-base-content/50 mt-2">
-              {filters.selectedVideos.length
-                ? `Scoped to ${filters.selectedVideos.length} selected video(s).`
-                : batchPrefixes.length
-                  ? `Scoping searches to: ${batchPrefixes.join(', ')}`
-                  : 'Loading batch scope…'}
+              Scoped to {filters.selectedVideos.length} selected video(s): overrides content and batch.
             </p>
           )}
-          <div className="flex gap-3 mt-1">
-            {BATCHES.map((value) => (
-              <label key={value} className="label cursor-pointer gap-1">
-                <input
-                  type="checkbox"
-                  className="checkbox checkbox-sm"
-                  checked={filters.batches.includes(value)}
-                  onChange={() => filters.toggleBatch(value)}
-                />
-                <span className="label-text">Batch {value}</span>
-              </label>
-            ))}
+        </div>
+
+        <div>
+          <p className="text-xs uppercase tracking-wide text-base-content/60 mb-1">
+            Other filters
+          </p>
+          <div className="relative mb-2">
+            <input
+              type="text"
+              placeholder="Transcript (S2T) contains..."
+              className={`input input-bordered input-sm w-full ${filters.s2tFilter ? 'input-primary pr-16' : ''}`}
+              value={filters.s2tFilter}
+              onChange={(e) => filters.update({ s2tFilter: e.target.value })}
+              onKeyDown={onEnter}
+            />
+            {filters.s2tFilter && (
+              <span className="badge badge-primary badge-xs absolute right-2 top-1/2 -translate-y-1/2">
+                active
+              </span>
+            )}
           </div>
+          {filters.s2tFilter && (
+            <p className="text-[10px] text-base-content/50 -mt-1 mb-2">
+              Applied on the next search. Result count stays at top-K; the frames
+              returned are the ones whose transcript matches.
+            </p>
+          )}
+          {/* Browse only: the backend applies the range to Browse alone, and in
+              frame numbers (a timecode made it fail). */}
+          {isBrowse && (
+            <div className="flex gap-2">
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder="From frame"
+                title="Browse only: first frame number (inclusive)"
+                className="input input-bordered input-sm flex-1"
+                value={filters.timeIn}
+                onChange={(e) => filters.update({ timeIn: e.target.value.replace(/\D/g, '') })}
+                onKeyDown={onEnter}
+              />
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder="To frame"
+                title="Browse only: last frame number (inclusive)"
+                className="input input-bordered input-sm flex-1"
+                value={filters.timeOut}
+                onChange={(e) => filters.update({ timeOut: e.target.value.replace(/\D/g, '') })}
+                onKeyDown={onEnter}
+              />
+            </div>
+          )}
         </div>
 
         <div>
@@ -163,79 +249,6 @@ export default function FiltersPanel() {
               ))}
             </ul>
           )}
-        </div>
-
-        <div>
-          <p className="text-xs uppercase tracking-wide text-base-content/60 mb-1">
-            Content
-          </p>
-          <div className="grid grid-cols-2 gap-x-2">
-            {Object.entries(subsetCatalog).map(([name, info]) => (
-              <label
-                key={name}
-                className="label cursor-pointer justify-start gap-2 px-1 py-0.5"
-                title={info.desc}
-              >
-                <input
-                  type="checkbox"
-                  className="checkbox checkbox-xs"
-                  checked={checkedSubsets.includes(name)}
-                  onChange={() => toggleSubset(name)}
-                />
-                <span className="label-text text-xs">{info.label || name}</span>
-              </label>
-            ))}
-          </div>
-          <p className="text-[10px] text-base-content/50 mt-1">
-            {checkedSubsets.length
-              ? `Searching: ${checkedSubsets.join(', ')}. Unchecked content is excluded.`
-              : 'No content type checked — falling back to batch scope.'}
-          </p>
-        </div>
-
-        <div>
-          <p className="text-xs uppercase tracking-wide text-base-content/60 mb-1">
-            Other filters
-          </p>
-          <div className="relative mb-2">
-            <input
-              type="text"
-              placeholder="Transcript (S2T) contains..."
-              className={`input input-bordered input-sm w-full ${filters.s2tFilter ? 'input-primary pr-16' : ''}`}
-              value={filters.s2tFilter}
-              onChange={(e) => filters.update({ s2tFilter: e.target.value })}
-              onKeyDown={onEnter}
-            />
-            {filters.s2tFilter && (
-              <span className="badge badge-primary badge-xs absolute right-2 top-1/2 -translate-y-1/2">
-                active
-              </span>
-            )}
-          </div>
-          {filters.s2tFilter && (
-            <p className="text-[10px] text-base-content/50 -mt-1 mb-2">
-              Applied on the next search. Result count stays at top-K; the frames
-              returned are the ones whose transcript matches.
-            </p>
-          )}
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="Time in"
-              className="input input-bordered input-sm flex-1"
-              value={filters.timeIn}
-              onChange={(e) => filters.update({ timeIn: e.target.value })}
-              onKeyDown={onEnter}
-            />
-            <input
-              type="text"
-              placeholder="Time out"
-              className="input input-bordered input-sm flex-1"
-              value={filters.timeOut}
-              onChange={(e) => filters.update({ timeOut: e.target.value })}
-              onKeyDown={onEnter}
-            />
-          </div>
         </div>
 
         <button type="button" className="btn btn-ghost btn-sm mt-2" onClick={() => filters.reset()}>

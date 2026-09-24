@@ -3,6 +3,7 @@ import HomePage from './pages/HomePage'
 import ResultManagerPage from './pages/ResultManagerPage'
 import SubmissionStatus from './components/SubmissionStatus'
 import SubmissionBar from './components/SubmissionBar'
+import QaDialog from './components/QaDialog'
 
 export default function App() {
   return (
@@ -25,6 +26,8 @@ export default function App() {
       </Routes>
       {/* Global DRES status toast (connection + last verdict). */}
       <SubmissionStatus />
+      {/* a card's Q */}
+      <QaDialog />
     </div>
   )
 }

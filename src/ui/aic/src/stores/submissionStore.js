@@ -1,12 +1,8 @@
 import { create } from 'zustand'
-import {
-  getSessionAndEval,
-  submitKis,
-  submitQa,
-  submitTrake,
-  frameTimeMs,
-} from '../api/submission'
+import { getSessionAndEval, submitKis, submitQa, submitTrake } from '../api/submission'
+import { frameMs } from '../api/timing'
 import { videoStem } from '../api/media'
+import { useSettingsStore } from './settingsStore'
 
 // Duplicate answers are refused by the central submission service (team-wide,
 // per evaluation, time-windowed), which answers 409 -- no client-side guard, so
@@ -20,9 +16,9 @@ function verdictOf(res) {
   return 'info'
 }
 
-// TRAKE entries hold the extension-less video name (videoStem). Records carry
-// "L21_V001.mp4" while temporal chains pass "L21_V001"; without one form, adding a
-// frame to a loaded chain looked like a different video and silently restarted it.
+// Submissions (KIS / Q&A / TRAKE) are explicit per-frame actions, like the legacy
+// K / Q / TR card buttons; there is no global mode. Video names are sent
+// extension-less (videoStem); the server maps them to the official DRES names.
 export const useSubmissionStore = create((set, get) => ({
   sessionId: null,
   evalId: null,
@@ -81,98 +77,97 @@ export const useSubmissionStore = create((set, get) => ({
     set({
       last: {
         kind: 'error',
-        text: `Cannot submit ${video}: its fps is unknown, so the frame's timestamp cannot be computed.`,
+        text: `Cannot submit ${video}: the frame's time cannot be computed (fps unknown or no valid frame number).`,
       },
     })
   },
 
-  // KIS one-click on a result frame (video_name + keyframe_id + fps).
-  submitFrameKis(record) {
-    const video = record.video_name
-    const ms = frameTimeMs(record.keyframe_id, record.fps)
+  /** The frame's real time (ms) for a DRES answer: api/timing.js (a per-frame
+   *  table on the irregular traffic cams, else frame / fps). null = cannot be
+   *  computed; undefined = the timing data did not load (already reported). */
+  async _frameMs(record) {
+    try {
+      return await frameMs(record.video_name, record.keyframe_id, record.fps)
+    } catch (e) {
+      set({
+        last: {
+          kind: 'error',
+          text: `Not sent: could not load the frame timing for ${videoStem(record.video_name)} (${e.message}). Retry.`,
+        },
+      })
+      return undefined
+    }
+  },
+
+  /** Settings -> "confirm before submit" gates EVERY submit path (card buttons,
+   *  the Q&A dialog, the frame viewer), so it lives here rather than per button. */
+  _confirmed(what) {
+    if (!useSettingsStore.getState().confirmSubmit) return true
+    return window.confirm(`Submit to DRES?\n${what}`)
+  },
+
+  // KIS: this frame's video + time.
+  async submitFrameKis(record) {
+    const video = videoStem(record.video_name)
+    const ms = await get()._frameMs(record)
+    if (ms === undefined) return
     if (ms == null) return get()._refuseUnknownFps(video)
     const label = `KIS ${video} @ ${ms}ms`
+    if (!get()._confirmed(label)) return
     return get()._submit(() =>
       submitKis({ sessionId: get().sessionId, evalId: get().evalId, video, start: ms, end: ms }),
       label,
     )
   },
 
-  // Q&A: an answer for the found frame.
-  submitQaAnswer(record, answer) {
-    const video = record.video_name
-    const ms = frameTimeMs(record.keyframe_id, record.fps)
+  // Q&A: an answer for this frame.
+  async submitQaAnswer(record, answer) {
+    const video = videoStem(record.video_name)
+    // NFC + single spaces: DRES compares the text exactly (case aside)
+    const text = String(answer ?? '').normalize('NFC').replace(/\s+/g, ' ').trim()
+    if (!text) {
+      set({ last: { kind: 'error', text: 'Type the Q&A answer first' } })
+      return
+    }
+    const ms = await get()._frameMs(record)
+    if (ms === undefined) return
     if (ms == null) return get()._refuseUnknownFps(video)
-    const label = `QA "${answer}" ${video} @ ${ms}ms`
+    const label = `QA "${text}" ${video} @ ${ms}ms`
+    if (!get()._confirmed(label)) return
     return get()._submit(() =>
-      submitQa({ sessionId: get().sessionId, evalId: get().evalId, answer, video, time: ms }),
+      submitQa({ sessionId: get().sessionId, evalId: get().evalId, answer: text, video, time: ms }),
       label,
     )
   },
 
-  // TRAKE: an ordered list of frame numbers from ONE video.
-  submitTrakeFrames(video, frameIds) {
-    const ids = frameIds.map((f) => String(parseInt(f, 10))).join(',')
+  // TRAKE: the event frames of ONE video, in timeline order.
+  submitTrakeFrames(videoName, frameIds) {
+    const video = videoStem(videoName)
+    const frames = frameIds.map((f) => parseInt(f, 10)).filter(Number.isFinite)
+    if (!frames.length) {
+      set({ last: { kind: 'error', text: 'No TRAKE events marked' } })
+      return
+    }
+    const ids = frames.join(',')
     const label = `TRAKE ${video} [${ids}]`
+    if (!get()._confirmed(label)) return
     return get()._submit(() =>
       submitTrake({ sessionId: get().sessionId, evalId: get().evalId, video, frameIds: ids }),
       label,
     )
   },
 
-  // ---- task mode (drives what the per-frame Submit button does) ----
-  mode: 'kis', // 'kis' | 'qa' | 'trake'
-  qaAnswer: '',
-  trake: [], // [{ video, frame }] — TRAKE answers must all come from ONE video
-  setMode: (mode) => set({ mode }),
-  setQaAnswer: (qaAnswer) => set({ qaAnswer }),
-  clearTrake: () => set({ trake: [] }),
-  removeTrakeFrame: (frame) =>
-    set((s) => ({ trake: s.trake.filter((t) => t.frame !== frame) })),
+  // ---- the frame viewer: ONE per page, opened by a card click, a card's TR, or a
+  // temporal chain's "Use as TRAKE". `tab` picks the submission panel shown first;
+  // `marks` pre-fills TRAKE events (only a loaded chain does). `nonce` makes every
+  // open a fresh viewer, even for the same frame.
+  viewer: null, // { record, tab: 'kis' | 'qa' | 'trake', marks: number[], nonce }
+  openViewer: (record, { tab = 'kis', marks = [] } = {}) =>
+    set({ viewer: { record, tab, marks, nonce: Date.now() } }),
+  closeViewer: () => set({ viewer: null }),
 
-  /** Load a whole temporal-search chain as the TRAKE sequence, in the chain's
-   *  own event order (NOT re-sorted by frame number, unlike addTrakeFrame) —
-   *  that order is what the backend already matched the query's events to.
-   *  Replaces any work-in-progress sequence, same as switching video does. */
-  loadTrakeChain(videoName, frameIds) {
-    const video = videoStem(videoName)
-    const trake = frameIds.map((frame) => ({ video, frame }))
-    set({
-      mode: 'trake',
-      trake,
-      last: { kind: 'info', text: `TRAKE loaded: ${video} [${frameIds.join(',')}]` },
-    })
-  },
-
-  addTrakeFrame(record) {
-    const video = videoStem(record.video_name)
-    const frame = parseInt(record.keyframe_id, 10)
-    set((s) => {
-      const same = s.trake.length === 0 || s.trake[0].video === video
-      const base = same ? s.trake : [] // switching video restarts the sequence
-      if (base.some((t) => t.frame === frame)) return {}
-      const trake = [...base, { video, frame }].sort((a, b) => a.frame - b.frame)
-      return { trake, last: { kind: 'info', text: `TRAKE +${video}#${frame} (${trake.length})` } }
-    })
-  },
-
-  submitTrakeNow() {
-    const t = get().trake
-    if (!t.length) {
-      set({ last: { kind: 'error', text: 'No TRAKE frames marked' } })
-      return
-    }
-    return get().submitTrakeFrames(
-      t[0].video,
-      t.map((x) => x.frame),
-    )
-  },
-
-  // The mode-aware action the per-frame Submit button calls.
-  actOnFrame(record) {
-    const m = get().mode
-    if (m === 'qa') return get().submitQaAnswer(record, get().qaAnswer)
-    if (m === 'trake') return get().addTrakeFrame(record)
-    return get().submitFrameKis(record)
-  },
+  // ---- the per-card Q&A dialog (a card's Q)
+  qaRecord: null,
+  openQa: (record) => set({ qaRecord: record }),
+  closeQa: () => set({ qaRecord: null }),
 }))

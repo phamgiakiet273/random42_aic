@@ -128,7 +128,7 @@ export default function SettingsPanel() {
             />
             <SliderField
               label="Download Limit"
-              min={1}
+              min={10}
               max={1000}
               step={10}
               value={settings.downloadLimit}

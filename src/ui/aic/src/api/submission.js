@@ -10,15 +10,6 @@ export function isFpsKnown(fps) {
   return Number.isFinite(r) && r > 0
 }
 
-/** Frame's time in the original video, ms: round(frame_idx / fps * 1000).
- *  Returns null when fps is unknown: the old `|| 1` fallback turned a missing
- *  fps into a timestamp 25-30x too large and submitted it as a real answer. */
-export function frameTimeMs(frameId, fps) {
-  if (!isFpsKnown(fps)) return null
-  const f = parseInt(frameId, 10) || 0
-  return Math.round((f / parseFloat(fps)) * 1000)
-}
-
 async function postJson(path, body) {
   const res = await fetch(`${API_BASE_URL}${path}`, {
     method: 'POST',

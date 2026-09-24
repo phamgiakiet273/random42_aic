@@ -56,10 +56,13 @@ export default function ManagedRowCard({
   function removeEvent(i) {
     onUpdateFrames(index, row.frame_ids.filter((_, k) => k !== i))
   }
+  // "1200, 1300" adds two events; events stay in frame (= event) order
   function addEvent() {
-    const value = frameBase(newFrame)
-    if (!value) return
-    onUpdateFrames(index, [...row.frame_ids, value])
+    const added = newFrame.split(/[\s,;]+/).map(frameBase).filter(Boolean)
+    if (!added.length) return
+    const all = [...row.frame_ids, ...added]
+    const numeric = all.every((f) => /^\d+$/.test(f))
+    onUpdateFrames(index, numeric ? [...new Set(all)].sort((a, b) => Number(a) - Number(b)) : all)
     setNewFrame('')
   }
 

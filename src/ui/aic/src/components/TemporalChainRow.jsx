@@ -7,16 +7,17 @@ import { useSubmissionStore } from '../stores/submissionStore'
  *  Flattening chains into the normal grid loses that sequence. */
 export default function TemporalChainRow({ chain, rank, mediaConfig, onSelect }) {
   const thumbnailSize = useSettingsStore((s) => s.thumbnailSize)
-  const loadTrakeChain = useSubmissionStore((s) => s.loadTrakeChain)
+  const openViewer = useSubmissionStore((s) => s.openViewer)
   const first = chain[0] || {}
   const videoName = String(first.video_name ?? '').split('.')[0]
   const total = chain.reduce((sum, frame) => sum + (Number(frame.score) || 0), 0)
 
   // Temporal search already returns exactly a TRAKE answer's shape (ordered
-  // events, one video) — this skips marking each frame by hand.
+  // events, one video): open the viewer on the TRAKE timeline with the chain's
+  // frames as markers, to review / drag / submit.
   function useAsTrake() {
     const frameIds = chain.map((frame) => parseInt(frame.keyframe_id, 10))
-    loadTrakeChain(videoName, frameIds)
+    openViewer(chain[0], { tab: 'trake', marks: frameIds })
   }
 
   return (
@@ -34,7 +35,7 @@ export default function TemporalChainRow({ chain, rank, mediaConfig, onSelect })
             <button
               type="button"
               className="btn btn-xs btn-outline gap-1"
-              title="Load this chain as the TRAKE sequence in the submission bar"
+              title="Open this chain on the TRAKE timeline (events pre-marked)"
               onClick={useAsTrake}
             >
               <ListOrdered size={12} /> Use as TRAKE

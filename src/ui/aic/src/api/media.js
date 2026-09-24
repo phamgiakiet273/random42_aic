@@ -85,15 +85,6 @@ export function buildVideoUrl(config, record) {
   return `${config.video_base_url}/${path}`
 }
 
-// Frame index -> seconds, so the video element can seek to the frame the user
-// clicked (doc comment [j]).
-export function frameToSeconds(keyframeId, fps) {
-  const frame = Number(keyframeId)
-  const rate = Number(fps)
-  if (!Number.isFinite(frame) || !Number.isFinite(rate) || rate <= 0) return null
-  return frame / rate
-}
-
 export function formatTimecode(totalSeconds) {
   if (totalSeconds == null || !Number.isFinite(totalSeconds)) return '—'
   const h = String(Math.floor(totalSeconds / 3600)).padStart(2, '0')
