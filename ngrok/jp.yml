@@ -1,0 +1,7 @@
+# The second tunnel agent (docker-compose-gateway.yml: ngrok-jp) connects through
+# ngrok's Tokyo edge; the first uses the nearest one (Singapore). Both serve the
+# same URL as an endpoint pool, so when one agent's session drops, ngrok routes
+# to the other. The authtoken comes from NGROK_AUTHTOKEN, not from this file.
+version: 3
+agent:
+  connect_url: connect.jp.ngrok-agent.com:443

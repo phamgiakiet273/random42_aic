@@ -13,12 +13,28 @@ services:
       - ./src/ui/aic/dist:/usr/share/nginx/html:ro
     restart: unless-stopped
 
+  # Two agents serve the same URL as an ngrok ENDPOINT POOL (--pooling-enabled on
+  # both): the session to ngrok's edge drops every hour or two (Vietnam's links
+  # abroad are degraded), and while one agent reconnects the other keeps the URL
+  # up. One connects through the nearest edge (Singapore), one through Tokyo, so a
+  # stall on one route rarely hits both.
   ngrok:
     image: ngrok/ngrok:latest
     depends_on: [gateway]
     environment:
       NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:?NGROK_AUTHTOKEN must be set in .env}
-    command: ["http", "--url=${NGROK_DOMAIN:?NGROK_DOMAIN must be set in .env}", "gateway:80", "--log", "stdout"]
+    command: ["http", "--url=${NGROK_DOMAIN:?NGROK_DOMAIN must be set in .env}", "gateway:80", "--pooling-enabled", "--log", "stdout"]
+    restart: unless-stopped
+
+  ngrok-jp:
+    image: ngrok/ngrok:latest
+    depends_on: [gateway]
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:?NGROK_AUTHTOKEN must be set in .env}
+    volumes:
+      - ./ngrok/jp.yml:/etc/ngrok/jp.yml:ro
+    command: ["http", "--url=${NGROK_DOMAIN:?NGROK_DOMAIN must be set in .env}", "gateway:80", "--pooling-enabled",
+              "--config", "/etc/ngrok/jp.yml", "--log", "stdout"]
     restart: unless-stopped
 
 networks:

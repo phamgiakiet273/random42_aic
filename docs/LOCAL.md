@@ -173,6 +173,12 @@ python3 tools/ui_check.py https://$NGROK_DOMAIN   # real browser, every UI featu
 ```
 
 - ngrok settings: `NGROK_AUTHTOKEN`, `NGROK_DOMAIN` in `.env` (gitignored).
+- The URL is served by **two pooled ngrok agents** (`--pooling-enabled`): `ngrok` through
+  the nearest edge (Singapore) and `ngrok-jp` through Tokyo (`ngrok/jp.yml`). Each agent's
+  session to ngrok drops every hour or two (Vietnam's links abroad are degraded since the
+  Aug-2026 cable faults); ngrok then routes to the other one. The UI also resends a failed
+  read (search, video list, CSV) once; submissions are never resent. Drops so far:
+  `docker logs aic2026-ngrok-1 2>&1 | grep -c "heartbeat timeout"` (and `aic2026-ngrok-jp-1`).
 - SSH for teammates (optional): this machine runs **no SSH server** (Tailscale SSH is off,
   no sshd). To offer the SSH option, enable one (Tailscale SSH: `sudo tailscale set --ssh`,
   or openssh-server in WSL) and give each teammate a login; their tunnel is
