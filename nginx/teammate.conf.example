@@ -2,8 +2,8 @@
 # everything else (UI, search, DRES submission, video) goes to the server's ngrok
 # gateway. Runbook: docs/LOCAL.md.
 #
-# Works under any nginx (bundled SIU_Pumpking binary, Homebrew on macOS, distro
-# package) and in Docker (docker-compose-teammate.yml): every path below is
+# Works under any nginx (conda-forge `nginx`, bundled SIU_Pumpking binary, Homebrew
+# on macOS, distro package) and in Docker (docker-compose-teammate.yml): every path below is
 # absolute, so nothing depends on where that nginx was installed.
 
 worker_processes 1;
@@ -36,6 +36,8 @@ http {
 
         # The server's gateway. If ngrok is down and you are on the team tailnet:
         # "http://100.98.145.10:9090" (the IP: the resolver below can't see MagicDNS).
+        # Over an SSH tunnel (ssh -N -L 9090:localhost:9090 <user>@100.98.145.10):
+        # "http://127.0.0.1:9090".
         set $aic_server "https://hallie-sabulous-nicholle.ngrok-free.dev";
 
         # Set here only: a location with its own proxy_set_header drops these.
