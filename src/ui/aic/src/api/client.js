@@ -25,32 +25,41 @@ function toFormData(fields) {
   return body
 }
 
-// Remote users reach the server through an ngrok tunnel whose session to ngrok's
-// edge drops now and then; for about a second requests fail AT NGROK (502/503/504,
-// or a response carrying its `ngrok-error-code` header, e.g. the 404 "endpoint
-// offline") or with a network error. The calls below only read (search, video
-// list, CSV...), so they are resent once after a short pause. Submissions never
-// come through here (api/submission.js): resending an answer could duplicate it.
-const RETRY_DELAY_MS = 1500
+// Remote users reach the server through ngrok agents whose sessions to ngrok's
+// edge drop now and then. A request caught by a drop either fails AT NGROK
+// (502/503/504, or a response carrying its `ngrok-error-code` header, e.g. the 404
+// "endpoint offline"), fails at the network, or HANGS on the stalled session until
+// ngrok gives up (seen as "down for a minute"). The calls below only read (search,
+// video list, CSV...), so each attempt gets a time limit and a failed or stuck one
+// is resent (a new request, which ngrok can route to a healthy agent). Submissions
+// never come through here (api/submission.js): resending an answer could duplicate it.
+const ATTEMPT_TIMEOUT_MS = 25000 // the heaviest search (6-event temporal, top-K 1000) takes ~3 s
+const RETRY_DELAYS_MS = [1000, 2500] // up to 2 retries
 
 function transient(res) {
   return res.status === 502 || res.status === 503 || res.status === 504 || res.headers.has('ngrok-error-code')
 }
 
-async function fetchRetryOnce(url, makeInit = () => ({})) {
-  try {
-    const res = await fetch(url, makeInit())
-    if (!transient(res)) return res
-  } catch (err) {
-    if (err?.name === 'AbortError') throw err
+async function fetchWithRetry(url, makeInit = () => ({})) {
+  for (let attempt = 0; ; attempt++) {
+    const last = attempt >= RETRY_DELAYS_MS.length
+    const timeout = new AbortController()
+    const timer = setTimeout(() => timeout.abort(), ATTEMPT_TIMEOUT_MS)
+    try {
+      const res = await fetch(url, { ...makeInit(), signal: timeout.signal })
+      if (!transient(res) || last) return res
+    } catch (err) {
+      if (last) throw err.name === 'AbortError' ? new ApiError('The server did not answer (tunnel down?) -- try again', 504) : err
+    } finally {
+      clearTimeout(timer)
+    }
+    await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]))
   }
-  await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS))
-  return fetch(url, makeInit())
 }
 
 // Every hub endpoint returns {status, message, data}; callers want `data`.
 export async function postForm(path, fields) {
-  const res = await fetchRetryOnce(`${API_BASE_URL}${path}`, () => ({
+  const res = await fetchWithRetry(`${API_BASE_URL}${path}`, () => ({
     method: 'POST',
     body: toFormData(fields),
   }))
@@ -59,13 +68,13 @@ export async function postForm(path, fields) {
 
 // `base` targets a service other than the hub (e.g. the result manager).
 export async function get(path, base = API_BASE_URL) {
-  const res = await fetchRetryOnce(`${base}${path}`)
+  const res = await fetchWithRetry(`${base}${path}`)
   return unwrap(res)
 }
 
 // Returns the raw Response — for endpoints that are not JSON (CSV export).
 export async function postFormRaw(path, fields) {
-  const res = await fetchRetryOnce(`${API_BASE_URL}${path}`, () => ({
+  const res = await fetchWithRetry(`${API_BASE_URL}${path}`, () => ({
     method: 'POST',
     body: toFormData(fields),
   }))

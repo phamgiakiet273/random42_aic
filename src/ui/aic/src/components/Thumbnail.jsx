@@ -82,7 +82,17 @@ export default function Thumbnail({ record, mediaConfig, index, onClick }) {
           loading="lazy"
           className="aspect-video w-full object-cover bg-base-200"
           onError={(e) => {
-            if (e.target.src !== fallback) e.target.src = fallback
+            // a tunnel drop can fail one image: retry it once before the placeholder
+            const img = e.target
+            if (img.src === fallback) return
+            if (src && !img.dataset.retried) {
+              img.dataset.retried = '1'
+              setTimeout(() => {
+                img.src = `${src}${src.includes('?') ? '&' : '?'}retry=1`
+              }, 1500)
+              return
+            }
+            img.src = fallback
           }}
         />
 
