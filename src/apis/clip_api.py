@@ -9,7 +9,11 @@ the routers into one too, parameterized by `prefix`.
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+import io
+
+import numpy as np
+from fastapi import APIRouter, File, Response, UploadFile
+from PIL import Image
 
 from src.common.schemas.api import APIResponse
 from src.common.schemas.vector import QdrantRequest, RetrievalRequest
@@ -51,6 +55,16 @@ def build_router(service: ClipSearchService, prefix: str) -> APIRouter:
     @router.get("/ping")
     async def ping() -> APIResponse:
         return await service.ping()
+
+    @router.post("/embed_images")
+    def embed_images(files: list[UploadFile] = File(...)) -> Response:
+        """INTERNAL (offline CCTV region job): lossless image crops -> L2-normalised
+        float16 vectors, same order, as raw bytes (N x D, shape in X-Shape). Sync, so
+        FastAPI runs it in a worker thread. Refused at the public gateway."""
+        images = [Image.open(io.BytesIO(f.file.read())).convert("RGB") for f in files]
+        vec = service.embed_images(images).astype(np.float16)
+        return Response(vec.tobytes(), media_type="application/octet-stream",
+                        headers={"X-Shape": f"{vec.shape[0]},{vec.shape[1]}"})
 
     @router.get("/setup_database")
     async def setup_database(

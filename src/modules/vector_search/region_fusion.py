@@ -19,6 +19,7 @@ exists, so it can ship before ingest.
 from __future__ import annotations
 
 import os
+import time
 
 from qdrant_client import models
 
@@ -35,19 +36,24 @@ REGION_WEIGHT = float(os.getenv("REGION_WEIGHT", "1.0"))  # region score weight 
 REGION_MAX_BOXES = int(os.getenv("REGION_MAX_BOXES", "6"))  # boxes kept per frame for UI
 REGION_ENABLED = os.getenv("REGION_ENABLED", "1") != "0"
 
-_state = {"ready": None}  # None = unknown, True/False cached
+_state = {"ready": None, "checked": 0.0}  # None = unknown; False is re-checked every 60 s
 
 
 def _ready(client) -> bool:
+    """Once present the collection stays enabled; while absent it is re-checked every
+    60 s, so the channel switches on after the region ingest without a restart."""
     if not REGION_ENABLED:
         return False
-    if _state["ready"] is None:
+    now = time.monotonic()
+    if _state["ready"] is None or (not _state["ready"] and now - _state["checked"] > 60):
         try:
-            _state["ready"] = client.collection_exists(REGION_COLLECTION)
-            logger.info(f"region channel {'ENABLED' if _state['ready'] else 'absent'}")
+            ready = client.collection_exists(REGION_COLLECTION)
         except Exception as e:  # noqa: BLE001
             logger.warning(f"region readiness check failed: {e}")
-            _state["ready"] = False
+            ready = False
+        if ready != _state["ready"]:
+            logger.info(f"region channel {'ENABLED' if ready else 'absent'}")
+        _state["ready"], _state["checked"] = ready, now
     return _state["ready"]
 
 

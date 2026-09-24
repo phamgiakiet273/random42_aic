@@ -166,6 +166,17 @@ class ClipSearchService:
         result = self._add_paths(result)
         return APIResponse(status=HTTPStatus.OK.value, message="Success", data=result)
 
+    def embed_images(self, images: list, batch: int = 16):
+        """Batch image embeddings with the ALREADY-LOADED model: the offline CCTV
+        region job uses this instead of loading a second SigLIP copy onto the GPU.
+        Same processor/autocast/normalisation as get_image_features (it IS that
+        call, on a list), so vectors match the job's own embeddings. Serialised with
+        live searches by the model's lock."""
+        import numpy as np
+        out = [np.asarray(self.model.get_image_features(images[i:i + batch]), dtype=np.float32)
+               for i in range(0, len(images), batch)]
+        return np.concatenate(out) if out else np.zeros((0, 1536), np.float32)
+
     async def text_search(
         self,
         text: str,
