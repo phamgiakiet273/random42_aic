@@ -20,6 +20,7 @@ one place.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import time
 from http import HTTPStatus
@@ -151,7 +152,8 @@ class ClipSearchService:
             f"scroll called with k={k}, video_filter={video_filter}, s2t_filter={s2t_filter}, "
             f"time_in={time_in}, time_out={time_out}, feature={utility_feature}"
         )
-        result = self.qdrant.scroll_video(
+        result = await asyncio.to_thread(
+            self.qdrant.scroll_video,
             k=k,
             video_filter=video_filter,
             time_in=time_in,
@@ -177,6 +179,28 @@ class ClipSearchService:
                for i in range(0, len(images), batch)]
         return np.concatenate(out) if out else np.zeros((0, 1536), np.float32)
 
+    # One process serves every teammate. Encoding stays on the event loop (the
+    # tokenizer is not thread-safe); the Qdrant work -- seconds for a big temporal
+    # search -- runs in a worker thread, so one heavy search no longer freezes
+    # everyone else's (a 0.1 s text search took 6.5 s behind a 6-event temporal).
+    def _search_vector(self, feat, k, video_filter, s2t_filter, frame_class_filter,
+                       skip_frames, sort_to_news, return_s2t):
+        result = self.qdrant.search(
+            query=feat,
+            k=k,
+            video_filter=video_filter or "",
+            s2t_filter=s2t_filter,
+            frame_class_filter=frame_class_filter,
+            skip_frames=skip_frames or [],
+            sort_to_news=sort_to_news,
+            return_s2t=return_s2t,
+        )
+        return augment_with_regions(
+            self.qdrant, feat, result, k,
+            frame_filter=self.qdrant._build_filter(video_filter or "", s2t_filter, frame_class_filter or [], skip_frames or []),
+            region_filter=video_only_filter(video_filter),
+        )
+
     async def text_search(
         self,
         text: str,
@@ -196,20 +220,9 @@ class ClipSearchService:
 
         feat = preprocessing_text(self.model, text)
         logger.info("Text feature extracted for search")
-        result = self.qdrant.search(
-            query=feat,
-            k=k,
-            video_filter=video_filter or "",
-            s2t_filter=s2t_filter,
-            frame_class_filter=frame_class_filter,
-            skip_frames=skip_frames or [],
-            sort_to_news=sort_to_news,
-            return_s2t=return_s2t,
-        )
-        result = augment_with_regions(
-            self.qdrant, feat, result, k,
-            frame_filter=self.qdrant._build_filter(video_filter or "", s2t_filter, frame_class_filter or [], skip_frames or []),
-            region_filter=video_only_filter(video_filter),
+        result = await asyncio.to_thread(
+            self._search_vector, feat, k, video_filter, s2t_filter, frame_class_filter,
+            skip_frames, sort_to_news, return_s2t,
         )
         logger.info(f"Text search completed with query {text!r}")
         result = self._add_paths(result)
@@ -236,20 +249,9 @@ class ClipSearchService:
         image = bytes_to_pil_image(raw_bytes)
         feat = preprocessing_image(self.model, image)
         logger.info("Image feature extracted for search")
-        result = self.qdrant.search(
-            query=feat,
-            k=k,
-            video_filter=video_filter or "",
-            s2t_filter=s2t_filter,
-            frame_class_filter=frame_class_filter,
-            skip_frames=skip_frames or [],
-            sort_to_news=sort_to_news,
-            return_s2t=return_s2t,
-        )
-        result = augment_with_regions(
-            self.qdrant, feat, result, k,
-            frame_filter=self.qdrant._build_filter(video_filter or "", s2t_filter, frame_class_filter or [], skip_frames or []),
-            region_filter=video_only_filter(video_filter),
+        result = await asyncio.to_thread(
+            self._search_vector, feat, k, video_filter, s2t_filter, frame_class_filter,
+            skip_frames, sort_to_news, return_s2t,
         )
         logger.info("Image search completed")
         result = self._add_paths(result)
@@ -288,7 +290,8 @@ class ClipSearchService:
         feats = [preprocessing_text(self.model, seg) for seg in segments]
         logger.info("Features extracted for all temporal segments")
 
-        result = self.qdrant.search_temporal(
+        result = await asyncio.to_thread(
+            self.qdrant.search_temporal,
             query_list=feats,
             query_main=main_event_index,
             k=k,

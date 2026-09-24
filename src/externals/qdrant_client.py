@@ -476,6 +476,32 @@ class QdrantSearchClient:
         info = self.client.get_collection(collection_name=self.collection_name)
         return info.points_count or 0
 
+    # What a result record needs (_format_search_results) minus the transcript: the
+    # bulkiest field, which temporal would otherwise convert for every one of its
+    # thousands of candidates. _attach_s2t adds it for the final chains only.
+    _TEMPORAL_PAYLOAD = ["idx_folder", "video_name", "frame_name", "fps", "frame_class",
+                         "is_unique", "related_start_frame", "related_end_frame"]
+
+    def _attach_s2t(self, chains) -> None:
+        records = list({id(r): r for chain in chains for r in chain}.values())
+        ids = sorted({int(r["key"]) for r in records if str(r.get("key", "")).isdigit()})
+        s2t = {}
+        for i in range(0, len(ids), 2000):
+            for p in self.client.retrieve(collection_name=self.collection_name, ids=ids[i:i + 2000],
+                                          with_payload=["s2t"], with_vectors=False):
+                v = (p.payload or {}).get("s2t") or []
+                s2t[int(p.id)] = list(v) if isinstance(v, (list, tuple)) else [v]
+        for r in records:
+            if str(r.get("key", "")).isdigit():
+                r["s2t"] = s2t.get(int(r["key"]), [])
+
+    @staticmethod
+    def _ranked(points):
+        """Qdrant returns exactly-tied scores in a varying order (it merges segments
+        searched in parallel), and the temporal merge breaks ties by "first seen",
+        so the same query could give different chains. Order ties by point id."""
+        return sorted(points, key=lambda p: (-p.score, p.id))
+
     def search_temporal(
         self,
         query_list: list[list[float]],
@@ -504,16 +530,17 @@ class QdrantSearchClient:
         neighbour_must_not = list(query_filter.must_not or [])
 
         query_len = len(query_list)
-        search_results = self.client.query_points(
+        search_results = self._ranked(self.client.query_points(
             collection_name=self.collection_name,
             query=query_list[query_main],
             query_filter=query_filter,
             timeout=self.timeout,
             limit=int(k) * query_len,
-        ).points
+            with_payload=self._TEMPORAL_PAYLOAD,
+        ).points)
 
         return_result = self._format_search_results(
-            search_results, return_s2t=return_s2t
+            search_results, return_s2t=False
         )
         # CCTV crops: a frame whose OBJECT matches the event counts too.
         return_result = augment_with_regions(
@@ -543,16 +570,17 @@ class QdrantSearchClient:
                 must=[models.HasIdCondition(has_id=list(id_condition)), *neighbour_must],
                 must_not=neighbour_must_not,
             )
-            search_results = self.client.query_points(
+            search_results = self._ranked(self.client.query_points(
                 collection_name=self.collection_name,
                 query=query_list[query_idx],
                 query_filter=filter_results,
                 limit=int(k) * (query_len - query_main + query_idx),
                 timeout=self.timeout,
-            ).points
+                with_payload=self._TEMPORAL_PAYLOAD,
+            ).points)
 
             return_result = self._format_search_results(
-                search_results, return_s2t=return_s2t
+                search_results, return_s2t=False
             )
             return_result = augment_with_regions(
                 self, query_list[query_idx], return_result, int(k) * (query_len - query_main + query_idx),
@@ -583,16 +611,17 @@ class QdrantSearchClient:
                 must=[models.HasIdCondition(has_id=list(id_condition)), *neighbour_must],
                 must_not=neighbour_must_not,
             )
-            search_results = self.client.query_points(
+            search_results = self._ranked(self.client.query_points(
                 collection_name=self.collection_name,
                 query=query,
                 query_filter=filter_results,
                 limit=int(k) * (len(query_list) + query_main - query_idx),
                 timeout=self.timeout,
-            ).points
+                with_payload=self._TEMPORAL_PAYLOAD,
+            ).points)
 
             return_result = self._format_search_results(
-                search_results, return_s2t=return_s2t
+                search_results, return_s2t=False
             )
             return_result = augment_with_regions(
                 self, query, return_result, int(k) * (len(query_list) + query_main - query_idx),
@@ -613,6 +642,8 @@ class QdrantSearchClient:
                 - float(x[query_main]["score"]),
                 reverse=True,
             )
+        if return_s2t:
+            self._attach_s2t(search_results)
         return search_results
 
     def _build_filter(
