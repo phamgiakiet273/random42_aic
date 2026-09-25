@@ -374,7 +374,12 @@ if not _SERVICE or _SERVICE not in _KNOWN_SERVICES:
     )
 
 setup_logger(_SERVICE)
-app = build_app(_SERVICE, get_settings())
+# `python -m src.main` runs this file as __main__, then uvicorn.run("src.main:app")
+# imports it AGAIN as src.main: building the app at both import points loaded every
+# model twice (two SigLIP copies on the GPU; the util translator's second copy fell
+# back to the CPU). Build it only in the imported module uvicorn serves.
+if __name__ != "__main__":
+    app = build_app(_SERVICE, get_settings())
 
 if __name__ == "__main__":
     signal.signal(signal.SIGINT, _handle_sigterm)
