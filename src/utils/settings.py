@@ -211,6 +211,11 @@ class Settings(BaseSettings):
     util_port: int = Field(9025, alias="UTIL_PORT")
     util_host_public: str = Field("http://localhost:9025", alias="UTIL_HOST_PUBLIC")
     util_max_workers: int = Field(5, alias="UTIL_MAX_WORKERS")
+    # "vinai" = offline VinAI vi->en model (src/modules/translate/vinai.py); "google" =
+    # the Cloud Translation API (paid, needs GG_TRANSLATE_API_KEY)
+    translate_backend: str = Field("vinai", alias="TRANSLATE_BACKEND")
+    # the VinAI model goes on the GPU only while the whole card stays under this (MiB)
+    translate_gpu_max_total_mib: int = Field(12288, alias="TRANSLATE_GPU_MAX_TOTAL_MIB")
     gg_translate_api_key: str | None = Field(None, alias="GG_TRANSLATE_API_KEY")
     gg_translate_endpoint: str = Field(
         "https://translation.googleapis.com/language/translate/v2",

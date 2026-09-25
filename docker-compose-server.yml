@@ -47,6 +47,12 @@ services:
     environment:
       SERVICE: util
     ports: ["9025:9025"]
+    # the offline VinAI translator (fp16, ~1.2 GB; src/modules/translate/vinai.py): it
+    # stays on the CPU by itself if the card would pass TRANSLATE_GPU_MAX_TOTAL_MIB
+    deploy:
+      resources:
+        reservations:
+          devices: [{driver: nvidia, count: 1, capabilities: [gpu]}]
     depends_on:
       qdrant-siglip-alpha:
         condition: service_healthy

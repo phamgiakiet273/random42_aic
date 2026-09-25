@@ -173,6 +173,30 @@ def main():
             pg.get_by_label("Cycling").check(); pg.get_by_label("Traffic CCTV").check()  # as later steps expect
         step("content buttons", s3b, pg)
 
+        # 3c. translation (offline VinAI model in the util service): T rewrites the
+        # Vietnamese query in English; English leaves T disabled; Auto Translate
+        # translates before the search and the box shows what was searched
+        def s3c():
+            vi = re.compile("[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]", re.I)
+            tbtn = pg.locator('button[title^="Translate Vietnamese"]')
+            q().fill("Một chiếc xe buýt màu đỏ đang rẽ trái ở ngã tư")
+            tbtn.click()
+            pg.wait_for_function("() => !document.querySelector('textarea').value.includes('xe buýt')", timeout=30000)
+            en = q().input_value()
+            check("T translates the query to English in place", "bus" in en.lower() and not vi.search(en), en)
+            check("T is disabled for English text", tbtn.is_disabled())
+            pg.get_by_role("button", name=re.compile("Settings")).click()
+            pg.get_by_label(re.compile("^Auto Translate")).check(); pg.keyboard.press("Escape")
+            q().fill("Người bán hàng đang xếp sầu riêng lên sạp trái cây ở chợ")
+            with pg.expect_request(lambda r: "/hub/search" in r.url, timeout=60000) as rq:
+                pg.get_by_role("button", name="Search", exact=True).click()
+            sent, box = rq.value.post_data or "", q().input_value()
+            check("Auto Translate: searched in English, box shows it", "durian" in box.lower() and "durian" in sent.lower()
+                  and "sầu riêng" not in sent, box)
+            pg.get_by_role("button", name=re.compile("Settings")).click()
+            pg.get_by_label(re.compile("^Auto Translate")).uncheck(); pg.keyboard.press("Escape")
+        step("translate", s3c, pg)
+
         # 4. pick one video in Included videos
         def s4():
             # the picker lists only the ticked batches (Batch 1 = M/N/S, ticked by default)

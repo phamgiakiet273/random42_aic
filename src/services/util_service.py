@@ -4,12 +4,16 @@ per-batch video name listing, and vector (shot) lookup.
 
 from __future__ import annotations
 
+import asyncio
 import re
 from http import HTTPStatus
+
+from fastapi import HTTPException
 
 from src.common.schemas.api import APIResponse
 from src.externals.qdrant_client import QdrantSearchClient
 from src.externals.translate_client import TranslateClient
+from src.modules.translate.vinai import TranslatorUnavailable, VinaiTranslator, has_vietnamese
 from src.utils.logger import get_logger
 from src.utils.metadata import get_frame_path
 from src.utils.settings import get_settings
@@ -27,8 +31,11 @@ class UtilService:
         self,
         translate_client: TranslateClient | None = None,
         vector_client: QdrantSearchClient | None = None,
+        translator: VinaiTranslator | None = None,
     ) -> None:
         self.translate_client = translate_client or TranslateClient()
+        # the offline model (TRANSLATE_BACKEND=vinai); None = the Google API client
+        self.translator = translator
         # Optional: only required by get_vector(). Pass the QdrantSearchClient
         # instance of whichever CLIP-search variant this deployment looks up
         # vectors for (e.g. the SigLIP v2 collection).
@@ -45,9 +52,12 @@ class UtilService:
     async def translate(
         self, text: str, target: str = "en", source: str | None = None
     ) -> APIResponse:
-        """Split `text` into sentences and translate each individually via Google
-        Translate, re-joining with spaces. Preserves a trailing '.' per sentence
-        if the source sentence had one and the translation dropped it."""
+        """Split `text` into sentences and translate each, re-joining with spaces.
+        Preserves a trailing '.' per sentence if the source sentence had one and the
+        translation dropped it. Offline VinAI model (Vietnamese -> English only; text
+        with no Vietnamese letters comes back unchanged) or the Google API."""
+        if self.translator is not None:
+            return await self._translate_offline(text, target)
         sentences = _SENTENCE_SPLIT_RE.findall(text)
         translated_sentences = []
 
@@ -68,6 +78,24 @@ class UtilService:
             message="Translation successful",
             data=final_text,
         )
+
+    async def _translate_offline(self, text: str, target: str | None) -> APIResponse:
+        if target not in (None, "", "en"):
+            raise HTTPException(status_code=400, detail="the offline translator only does Vietnamese -> English")
+        if not has_vietnamese(text):
+            return APIResponse(status=HTTPStatus.OK.value, message="No Vietnamese: unchanged", data=text)
+        sentences = [s.strip() for s in _SENTENCE_SPLIT_RE.findall(text) if s.strip()]
+        try:
+            # one batched generate for all sentences, off the event loop
+            outs = await asyncio.to_thread(self.translator.translate_many, sentences)
+        except TranslatorUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        joined = []
+        for src, out in zip(sentences, outs):
+            if src.endswith(".") and not out.endswith("."):
+                out += "."
+            joined.append(out)
+        return APIResponse(status=HTTPStatus.OK.value, message="Translation successful", data=" ".join(joined))
 
     async def get_neighboring_frames(
         self, frame_num: str, video_name: str, k: int = 3

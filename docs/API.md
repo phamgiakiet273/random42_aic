@@ -252,7 +252,7 @@ curl -X POST http://<host>:9021/hub/download \
 
 | Endpoint | Required form fields | Optional fields | `data` on success |
 | --- | --- | --- | --- |
-| `POST /translate` | `text` | `source` (default empty), `target` (default `en`) | Translated text/result from utility service. |
+| `POST /translate` | `text` | `source` (ignored offline), `target` (default `en`; offline: `en` only) | English text. Offline VinAI vi->en model by default (`TRANSLATE_BACKEND=vinai`); text with no Vietnamese letters comes back unchanged. `google` = the paid Cloud Translation API. |
 | `POST /rerank_color` | `video_metadata_list` | — | Reordered frame-record list. |
 | `POST /get_neighboring_frames` | `frame_num`, `video_name` | `k` (default `1`) | Adjacent frame records. |
 | `POST /get_vector_of_frame` | `video_name`, `frame_name` | — | Frame embedding/vector. |
@@ -267,13 +267,13 @@ Example translation:
 
 ```bash
 curl -X POST http://<host>:9021/hub/translate \
-  -F 'text=bonjour le monde' -F 'source=fr' -F 'target=en'
+  -F 'text=Một chiếc xe buýt màu đỏ đang rẽ trái ở ngã tư.' -F 'target=en'
 ```
 
 Example response:
 
 ```json
-{"status": 200, "message": "Success", "data": "hello world"}
+{"status": 200, "message": "Translation successful", "data": "A red bus is turning left at the intersection."}
 ```
 
 ### Submission

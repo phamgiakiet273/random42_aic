@@ -1,6 +1,8 @@
 import { useState } from 'react'
-import { Search, Plus, X, Loader2 } from 'lucide-react'
+import { Search, Plus, X, Loader2, Languages } from 'lucide-react'
 import { MODELS, SEARCH_TYPES } from '../api/search'
+import { translateQuery, useTranslateStore } from '../api/translateQuery'
+import { hasVietnamese } from '../utils/vietnamese'
 import { useSearchStore } from '../stores/searchStore'
 import { useRunSearch } from '../hooks/useRunSearch'
 import { isEnter } from '../utils/keys'
@@ -23,6 +25,11 @@ export default function QueryPanel() {
   const setEvents = (next) => store.setQuery({ events: next })
 
   const searching = store.status === 'loading'
+  const translating = useTranslateStore((s) => s.busy)
+  const translateError = useTranslateStore((s) => s.error)
+  const canTranslate =
+    (store.searchType === SEARCH_TYPES.TEXT && hasVietnamese(store.text)) ||
+    (store.searchType === SEARCH_TYPES.TEMPORAL && store.events.some(hasVietnamese))
 
   function handleFile(file) {
     if (!file) return
@@ -48,7 +55,21 @@ export default function QueryPanel() {
   return (
     <div className="card bg-base-100 shadow-sm">
       <form className="card-body gap-4" onSubmit={handleSubmit}>
-        <h2 className="card-title text-base">Query</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="card-title text-base">Query</h2>
+          {(store.searchType === SEARCH_TYPES.TEXT || store.searchType === SEARCH_TYPES.TEMPORAL) && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-xs gap-1"
+              disabled={translating || !canTranslate}
+              onClick={() => translateQuery()}
+              title="Translate Vietnamese to English, in place (offline model on the server). Settings: Auto Translate does it before every search."
+            >
+              {translating ? <Loader2 size={12} className="animate-spin" /> : <Languages size={12} />} T
+            </button>
+          )}
+        </div>
+        {translateError && <p className="text-xs text-error -mt-2">{translateError}</p>}
 
         <div role="tablist" className="tabs tabs-boxed tabs-sm">
           {TABS.map((tab) => (

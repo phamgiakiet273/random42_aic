@@ -166,8 +166,13 @@ def _build_util_app() -> FastAPI:
         settings.siglip_v2_qdrant_grpc_port,
         settings.siglip_v2_database_name,
     )
+    translator = None
+    if settings.translate_backend == "vinai":
+        from src.modules.translate.vinai import VinaiTranslator
+
+        translator = VinaiTranslator(settings.transformers_cache, settings.translate_gpu_max_total_mib)
     service = UtilService(
-        translate_client=TranslateClient(), vector_client=vector_client
+        translate_client=TranslateClient(), vector_client=vector_client, translator=translator
     )
     app = create_app()
     app.include_router(build_util_router(service))

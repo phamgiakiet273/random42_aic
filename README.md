@@ -21,7 +21,7 @@ The backend is 8 independently-deployable FastAPI services sharing one codebase.
 | `siglip_beta` | SigLIP2 search backend (second model/collection, for A/B comparison) | 9030 |
 | `metaclip` | MetaCLIP search backend (third model variant) | 9031 |
 | `rerank` | Reranks candidate frames by dominant color | 9126 |
-| `util` | Translation, neighboring-frame lookup, direct vector lookup | 9025 |
+| `util` | Translation (offline VinAI vi->en model, GPU ~1.2 GB), neighboring-frame lookup, direct vector lookup | 9025 |
 | `submission` | The team's ONE DRES client (KIS/QA/TRAKE): one session, duplicate guard; see `docs/SUBMISSION_SPEC.md` | 9024 |
 
 **The UI is the React app in `src/ui/aic`**, served by the `frontend` container on **:10000** (this machine)
@@ -55,7 +55,8 @@ src/
 
 ```bash
 cp .env.example .env
-# fill in HUGGINGFACE_HUB_TOKEN, GG_TRANSLATE_API_KEY, SUBMIT_USERNAME/PASSWORD, and dataset paths
+# fill in HUGGINGFACE_HUB_TOKEN, SUBMIT_USERNAME/PASSWORD, and dataset paths
+# (translation is offline by default; GG_TRANSLATE_API_KEY only with TRANSLATE_BACKEND=google)
 # (+ NGROK_AUTHTOKEN / NGROK_DOMAIN for `./stack.sh start --remote`: teammates, docs/LOCAL.md)
 ```
 

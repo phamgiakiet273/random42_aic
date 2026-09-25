@@ -81,7 +81,9 @@ export default function SettingsPanel() {
                 checked={settings.autoTranslate}
                 onChange={(e) => settings.update({ autoTranslate: e.target.checked })}
               />
-              <span className="label-text">Auto Translate <span className="badge badge-ghost badge-xs">TODO</span></span>
+              <span className="label-text" title="Vietnamese in the Text / Temporal boxes becomes English before every search (the box shows the English). Or press T in the query panel.">
+                Auto Translate (Vietnamese to English)
+              </span>
             </label>
 
             <label className="label cursor-pointer justify-start gap-2">
