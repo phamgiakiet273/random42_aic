@@ -8,6 +8,7 @@ import { useHoverScrub } from '../hooks/useHoverScrub'
 import { UTILITY_FEATURES, utilityScrollParams } from '../api/search'
 import { buildFrameUrl, videoStem } from '../api/media'
 import { frameClassStyle } from '../utils/frameClass'
+import { uniquenessStyle } from '../utils/uniqueness'
 import { COLORS, placeholderThumbnail } from '../utils/placeholder'
 import CardSubmitButtons from './CardSubmitButtons'
 
@@ -25,6 +26,7 @@ export default function Thumbnail({ record, mediaConfig, index, onClick }) {
   const fallback = placeholderThumbnail(label, COLORS[(index ?? 0) % COLORS.length])
   const transcript = Array.isArray(record.s2t) ? record.s2t.join(' ') : ''
   const cls = frameClassStyle(record.frame_class)
+  const uniq = uniquenessStyle(record.is_unique)
   const isOrigin = useSearchStore((s) => s.originKey) === key
   const cardRef = useRef(null)
   // hover right / left half: play the next / previous keyframes; leave: back to this frame
@@ -58,7 +60,7 @@ export default function Thumbnail({ record, mediaConfig, index, onClick }) {
   return (
     <div
       ref={cardRef}
-      className={`card bg-base-100 shadow-sm hover:shadow-md transition-shadow cursor-pointer ${
+      className={`card bg-base-100 ${uniq.outline} shadow-sm hover:shadow-md transition-shadow cursor-pointer ${
         isOrigin ? 'ring-2 ring-primary ring-offset-2 ring-offset-base-200' : ''
       }`}
       onClick={onClick}
@@ -163,7 +165,7 @@ export default function Thumbnail({ record, mediaConfig, index, onClick }) {
         {/* Video and frame carry equal weight and share one row; the video
             timecode and the CLIP score were dropped as noise. */}
         <div className="flex items-center justify-between gap-2">
-          <p className="text-sm font-medium truncate">
+          <p className="text-sm font-medium truncate" title={uniq.label}>
             <span>{label}</span>
             <span className="text-base-content/40">,</span>{' '}
             <span>{record.keyframe_id}</span>
