@@ -201,13 +201,30 @@ export const useSubmissionStore = create((set, get) => ({
     )
   },
 
+  // ---- TRAKE events per video, kept here (not in the viewer) so closing the viewer
+  // -- a click outside, Esc -- loses nothing: any frame of that video reopens with
+  // them. For this page session; "Clear" in the viewer empties them.
+  trakeMarks: {}, // { videoStem: number[] (unique, sorted) }
+  setTrakeMarks: (video, frames) =>
+    set((s) => {
+      const marks = [...new Set(frames.map(Number))]
+        .filter((f) => Number.isInteger(f) && f >= 0)
+        .sort((a, b) => a - b)
+      const next = { ...s.trakeMarks }
+      if (marks.length) next[video] = marks
+      else delete next[video]
+      return { trakeMarks: next }
+    }),
+
   // ---- the frame viewer: ONE per page, opened by a card click, a card's TR, or a
   // temporal chain's "Use as TRAKE". `tab` picks the submission panel shown first;
-  // `marks` pre-fills TRAKE events (only a loaded chain does). `nonce` makes every
-  // open a fresh viewer, even for the same frame.
-  viewer: null, // { record, tab: 'kis' | 'qa' | 'trake', marks: number[], nonce }
-  openViewer: (record, { tab = 'kis', marks = [] } = {}) =>
-    set({ viewer: { record, tab, marks, nonce: Date.now() } }),
+  // `marks` (a chain's frames) REPLACE that video's TRAKE events; without it the
+  // video's kept events show. `nonce` makes every open a fresh viewer.
+  viewer: null, // { record, tab: 'kis' | 'qa' | 'trake', nonce }
+  openViewer: (record, { tab = 'kis', marks } = {}) => {
+    if (marks?.length) get().setTrakeMarks(videoStem(record.video_name), marks)
+    set({ viewer: { record, tab, nonce: Date.now() } })
+  },
   closeViewer: () => set({ viewer: null }),
 
   // ---- the per-card Q&A dialog (a card's Q)

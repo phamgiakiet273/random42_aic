@@ -18,10 +18,10 @@ import { isEnter } from '../utils/keys'
 //
 // `urls` overrides the media-config URLs (the result manager's CSV rows have no
 // batch). `markMode`:
-//   'dres' - the three DRES actions above; TRAKE marks are this viewer's own
+//   'dres' - the three DRES actions above; TRAKE marks are the submission store's
+//            for this video, so they survive closing the viewer
 //   'csv'  - the result manager: the timeline edits its marks (-> a CSV TRAKE row)
-// `initialTab` / `initialMarks`: which panel opens first, and pre-marked TRAKE
-// events (a temporal chain's "Use as TRAKE"). A card's TR opens TRAKE, empty.
+// `initialTab`: which panel opens first (a card's TR, a chain's "Use as TRAKE": TRAKE).
 // Shown as the keyboard icon's tooltip; each control also names its own key.
 const SHORTCUTS = [
   'Keyboard shortcuts (click the viewer first, not a text box):',
@@ -41,6 +41,8 @@ const VERDICT = {
   info: 'alert-info',
 }
 
+const NO_MARKS = [] // one constant: a fresh [] each render would re-run every hook using it
+
 const TABS = [
   ['kis', 'KIS'],
   ['qa', 'Q&A'],
@@ -53,7 +55,6 @@ export default function FrameDetailModal({
   urls,
   markMode = 'dres',
   initialTab = 'kis',
-  initialMarks = [],
   onClose,
 }) {
   const isDres = markMode === 'dres'
@@ -69,10 +70,6 @@ export default function FrameDetailModal({
   const [currentFrame, setCurrentFrame] = useState(null)
   const [tab, setTab] = useState(isDres ? initialTab : 'trake')
   const [qaAnswer, setQaAnswer] = useState('')
-  // a temporal chain can repeat a frame: one event per frame, in timeline order
-  const [ownMarks, setOwnMarks] = useState(() =>
-    [...new Set(initialMarks.map(Number).filter((f) => Number.isInteger(f) && f >= 0))].sort((a, b) => a - b),
-  )
   const [selectedMark, setSelectedMark] = useState(null)
   const [goTo, setGoTo] = useState('')
   const neighborCount = useSettingsStore((s) => s.neighborFrameCount)
@@ -88,6 +85,8 @@ export default function FrameDetailModal({
   const updateResultStore = useResultStore((s) => s.update)
 
   const videoName = record ? videoStem(record.video_name) : null
+  const ownMarks = useSubmissionStore((s) => (videoName && s.trakeMarks[videoName]) || NO_MARKS)
+  const setTrakeMarks = useSubmissionStore((s) => s.setTrakeMarks)
   // Do NOT silently fall back to 25: fps varies across the dataset, so a guessed
   // fps produces a time that looks right and is not. Actions are disabled instead.
   const rawFps = Number(record?.fps)
@@ -118,7 +117,7 @@ export default function FrameDetailModal({
   const setMarks = useCallback(
     (frames) => {
       const sorted = [...new Set(frames.map(Number))].sort((a, b) => a - b)
-      if (isDres) return setOwnMarks(sorted)
+      if (isDres) return setTrakeMarks(videoName, sorted)
       // the result store keeps ONE video's marks: marking another video drops them
       if (
         csvMarkVideo && csvMarkVideo !== videoName && csvMarks.length &&
@@ -127,7 +126,7 @@ export default function FrameDetailModal({
         return
       updateResultStore({ marks: sorted, markVideo: videoName })
     },
-    [isDres, updateResultStore, videoName, csvMarkVideo, csvMarks],
+    [isDres, setTrakeMarks, updateResultStore, videoName, csvMarkVideo, csvMarks],
   )
 
   // The util service may not be running; a failure here must not break the modal.

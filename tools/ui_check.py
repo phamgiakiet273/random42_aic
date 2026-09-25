@@ -252,6 +252,33 @@ def main():
                   on_button == orig and pg.evaluate(first) == orig, f"on K {num(on_button)}, after leaving {num(pg.evaluate(first))}")
         step("hover scrub", s9b, pg)
 
+        # 9c. TRAKE events survive closing the viewer by a click outside: reopening the
+        # video (its TR, or a card click) shows them again. Nothing is submitted.
+        def s9c():
+            pg.get_by_label("TRAKE: mark events on this video").first.click(force=True)
+            dlg = open_viewer(pg)
+            clear = dlg.locator('button[title="Remove all events"]')
+            if clear.is_enabled(): clear.click()
+            dlg.locator(".modal-box").click(position={"x": 5, "y": 5})  # keys go to the dialog
+            pg.keyboard.press("m"); pg.keyboard.press("ArrowRight"); pg.keyboard.press("ArrowRight")
+            pg.wait_for_timeout(400); pg.keyboard.press("m"); pg.wait_for_timeout(600)
+            ev = dlg.locator("ol li").all_inner_texts()
+            pg.mouse.click(5, 5)  # outside the viewer
+            pg.wait_for_function("() => !document.querySelector('dialog[open] video')", timeout=10000)
+            pg.get_by_label("TRAKE: mark events on this video").first.click(force=True)
+            dlg = open_viewer(pg)
+            ev_tr = dlg.locator("ol li").all_inner_texts()
+            close_viewer(pg)
+            pg.locator("img[src*='/media/frames/']").first.click()
+            dlg = open_viewer(pg)
+            n_card, tab_label = markers(pg), dlg.get_by_role("tab", name=re.compile("^TRAKE")).inner_text()
+            check("TRAKE events kept after a click outside (TR reopen + card click)",
+                  len(ev) == 2 and ev_tr == ev and n_card == 2 and "(2)" in tab_label,
+                  f"marked {len(ev)}, TR reopen {len(ev_tr)}, card click {n_card} markers, tab {tab_label!r}")
+            dlg.get_by_role("tab", name=re.compile("^TRAKE")).click()
+            dlg.locator('button[title="Remove all events"]').click()
+            close_viewer(pg)
+        step("TRAKE kept on close", s9c, pg)
 
         # 10. frame viewer: opens PAUSED at the frame (no autoplay), KIS panel first,
         # timeline + neighbouring frames

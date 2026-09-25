@@ -158,7 +158,6 @@ export default function VideoGrid() {
         key={viewer?.nonce ?? 'closed'}
         record={viewer?.record ?? null}
         initialTab={viewer?.tab}
-        initialMarks={viewer?.marks}
         mediaConfig={mediaConfig}
         onClose={closeViewer}
       />
