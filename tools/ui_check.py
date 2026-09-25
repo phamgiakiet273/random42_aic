@@ -159,6 +159,20 @@ def main():
             q().fill("a news anchor in a studio")
         step("search scope", s3, pg)
 
+        # 3b. content buttons: none / all / default (back to the catalog's defaults)
+        def s3b():
+            ticked = lambda: pg.evaluate("() => [...document.querySelectorAll('div.grid.grid-cols-2 label')]"
+                                         ".filter(l => l.querySelector('input').checked).map(l => l.innerText.trim())")
+            total = pg.locator("div.grid.grid-cols-2 label").count()
+            before = ticked()  # the defaults + Cycling + Traffic CCTV from step 3
+            btn = lambda name: pg.get_by_role("button", name=name, exact=True).click()
+            btn("none"); none = ticked(); btn("all"); every = ticked(); btn("default"); default = ticked()
+            check("content none / all / default", not none and len(every) == total
+                  and set(default) == set(before) - {"Cycling", "Traffic CCTV"},
+                  f"none {len(none)}, all {len(every)}/{total}, default {default}")
+            pg.get_by_label("Cycling").check(); pg.get_by_label("Traffic CCTV").check()  # as later steps expect
+        step("content buttons", s3b, pg)
+
         # 4. pick one video in Included videos
         def s4():
             # the picker lists only the ticked batches (Batch 1 = M/N/S, ticked by default)

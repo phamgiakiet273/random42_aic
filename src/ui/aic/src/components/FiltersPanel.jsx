@@ -94,6 +94,10 @@ export default function FiltersPanel() {
           <div className="flex items-center justify-between mb-1">
             <p className="text-xs uppercase tracking-wide text-base-content/60">Content</p>
             <span className="flex gap-1">
+              {/* null = the catalog's default-checked content (subsets.json) */}
+              <button type="button" className="btn btn-ghost btn-xs" title="Back to the default content" onClick={() => filters.setSubsets(null)}>
+                default
+              </button>
               <button type="button" className="btn btn-ghost btn-xs" onClick={() => filters.setSubsets(Object.keys(subsetCatalog))}>
                 all
               </button>
