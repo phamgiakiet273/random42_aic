@@ -153,7 +153,8 @@ do_verify() {
   # The UI is a vite dev server that proxies /hub, /result_manager and /media.
   # "GET / -> 200" only proves vite is up; check what the browser actually needs.
   local ui=http://localhost:10000 asset code
-  asset=$(curl -s --max-time 15 "$ui/" | grep -oE 'src="[^"]+\.(js|jsx)"' | head -1 | sed 's/src="//;s/"//')
+  # vite adds ?t=<timestamp> to the entry after a hot reload: allow a query string
+  asset=$(curl -s --max-time 15 "$ui/" | grep -oE 'src="[^"]+\.(js|jsx)(\?[^"]*)?"' | head -1 | sed 's/src="//;s/"//')
   if [ -n "$asset" ] && [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$ui$asset")" = "200" ]; then
     ok "UI serves its JS entry ($asset)"
   else bad "UI JS entry did not load (asset='$asset')"; fi
