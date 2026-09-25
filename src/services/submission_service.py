@@ -180,23 +180,21 @@ class SubmissionService:
         return APIResponse(status=HTTPStatus.OK.value, message="Running (Healthy)", data="ping")
 
     async def get_session_and_eval(self) -> APIResponse:
-        """UI bootstrap/badge. Served from the shared state -- no DRES call unless
-        this process has never refreshed (the poll normally keeps it current)."""
+        """UI bootstrap/badge. Always served from the shared state, never a DRES call:
+        every open UI polls this every 10 s, and waiting on a slow DRES here (it did,
+        until the first refresh succeeded) held those requests open for up to a
+        minute and started one login per request. poll_forever keeps the state."""
         if not self.configured:
             return APIResponse(
                 status=HTTPStatus.BAD_REQUEST.value,
                 message="DRES credentials not set (SUBMIT_USERNAME / SUBMIT_PASSWORD)",
                 data=self._state(),
             )
-        if self.last_refresh is None:
-            try:
-                await self.refresh()
-            except Exception as exc:
-                self.last_error = f"{type(exc).__name__}: {exc}"
         if not self.dres_client.session_id:
             return APIResponse(
                 status=HTTPStatus.SERVICE_UNAVAILABLE.value,
-                message=f"not logged in to DRES: {self.last_error}",
+                message=f"not logged in to DRES: {self.last_error}" if self.last_error
+                else "connecting to DRES...",
                 data=self._state(),
             )
         return APIResponse(

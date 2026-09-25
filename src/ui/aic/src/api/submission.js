@@ -23,14 +23,25 @@ async function postJson(path, body) {
   return json.data ?? json // DRES result: { submission: "CORRECT"|"WRONG", description, ... }
 }
 
-/** Lazy login + the ACTIVE evaluation id. Never throws — returns ok/message. */
+// Under the 10 s status poll. Without a limit a stalled link (tunnel, proxy) left
+// one request hanging per poll; the browser allows 6 connections per host over
+// HTTP/1.1 (dev server, teammates' nginx), so after a minute nothing else loaded.
+const STATUS_TIMEOUT_MS = 8000
+
+/** The central service's DRES session + ACTIVE evaluations. Never throws —
+ *  returns ok/message; `unreachable` = the server did not answer at all. */
 export async function getSessionAndEval() {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), STATUS_TIMEOUT_MS)
   try {
-    const res = await fetch(`${API_BASE_URL}/submission/get_session_and_eval`)
+    const res = await fetch(`${API_BASE_URL}/submission/get_session_and_eval`, { signal: ctrl.signal })
     const json = await res.json().catch(() => ({}))
     return { ok: json.status === 200, message: json.message || '', ...(json.data || {}) }
   } catch (e) {
-    return { ok: false, message: String(e), session_id: null, eval_id: null }
+    const message = e.name === 'AbortError' ? 'the server did not answer in 8 s (tunnel down?)' : String(e)
+    return { ok: false, unreachable: true, message, session_id: null, eval_id: null }
+  } finally {
+    clearTimeout(timer)
   }
 }
 

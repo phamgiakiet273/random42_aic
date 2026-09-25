@@ -16,6 +16,10 @@ function verdictOf(res) {
   return 'info'
 }
 
+// the status request in flight: the 10 s poll, the connect / retry buttons and a
+// submit's readiness check share it instead of stacking requests
+let bootstrapping = null
+
 const CHOSEN_EVAL_KEY = 'aic.dres.chosenEvalId'
 function loadChosenEval() {
   try {
@@ -51,12 +55,25 @@ export const useSubmissionStore = create((set, get) => ({
 
   clearLast: () => set({ last: null }),
 
-  async bootstrap() {
-    const r = await getSessionAndEval()
-    const evaluations = Array.isArray(r.evaluations) ? r.evaluations : []
-    set({ sessionId: r.session_id || null, evaluations })
-    get()._applyChoice(r.ok, r.message || '')
-    return r
+  bootstrap() {
+    if (!bootstrapping) {
+      bootstrapping = (async () => {
+        const r = await getSessionAndEval()
+        if (r.unreachable) {
+          // no answer (link down): not ready, but keep the evaluations and the one
+          // chosen in the header -- a blip must not make everyone choose again
+          set({ ready: false, message: r.message })
+          return r
+        }
+        const evaluations = Array.isArray(r.evaluations) ? r.evaluations : []
+        set({ sessionId: r.session_id || null, evaluations })
+        get()._applyChoice(r.ok, r.message || '')
+        return r
+      })().finally(() => {
+        bootstrapping = null
+      })
+    }
+    return bootstrapping
   },
 
   /** Pick the evaluation to submit to: the chosen one while it is ACTIVE, else
