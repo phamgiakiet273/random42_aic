@@ -228,6 +228,31 @@ def main():
             check("text search again", len(th) > 0, f"{len(th)} results")
         step("text again", s9, pg)
 
+        # 9b. hover-scrub on a card: right half plays the next keyframes, left half the
+        # previous ones; a card button or leaving the card shows the result frame again
+        def s9b():
+            first = "() => [...document.images].find(i => i.src.includes('/media/frames/')).src"
+            num = lambda u: int(u.split("?")[0].split("/")[-1].split(".")[0])
+            orig = pg.evaluate(first)
+            box = pg.locator("img[src*='/media/frames/']").first.bounding_box()
+            at = lambda fx: pg.mouse.move(box["x"] + box["width"] * fx, box["y"] + box["height"] * 0.35)
+            at(0.8); pg.wait_for_timeout(1500)
+            right = pg.evaluate(first)
+            at(0.2); pg.wait_for_timeout(1200); left1 = pg.evaluate(first)
+            pg.wait_for_timeout(1000); left2 = pg.evaluate(first)
+            check("hover right half plays the next keyframes, left half the previous",
+                  num(right) > num(orig) and num(left2) < num(left1),
+                  f"result {num(orig)} -> right {num(right)} -> left {num(left1)}, {num(left2)}")
+            at(0.8); pg.wait_for_timeout(1000)
+            pg.get_by_label("Submit this frame to DRES as KIS").first.hover(); pg.wait_for_timeout(400)
+            on_button = pg.evaluate(first)
+            at(0.8); pg.wait_for_timeout(1000)
+            pg.mouse.move(2, 2); pg.wait_for_timeout(400)
+            check("a card button / leaving the card shows the result frame again",
+                  on_button == orig and pg.evaluate(first) == orig, f"on K {num(on_button)}, after leaving {num(pg.evaluate(first))}")
+        step("hover scrub", s9b, pg)
+
+
         # 10. frame viewer: opens PAUSED at the frame (no autoplay), KIS panel first,
         # timeline + neighbouring frames
         def s10():

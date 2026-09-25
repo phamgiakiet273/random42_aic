@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react'
-import { X, Newspaper, Images } from 'lucide-react'
+import { X, Newspaper, Images, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import { useExcludedFramesStore } from '../stores/excludedFramesStore'
 import { useSearchStore, recordKey } from '../stores/searchStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useBaseSearchParams } from '../hooks/useBaseSearchParams'
+import { useHoverScrub } from '../hooks/useHoverScrub'
 import { UTILITY_FEATURES, utilityScrollParams } from '../api/search'
 import { buildFrameUrl, videoStem } from '../api/media'
 import { frameClassStyle } from '../utils/frameClass'
@@ -26,6 +27,8 @@ export default function Thumbnail({ record, mediaConfig, index, onClick }) {
   const cls = frameClassStyle(record.frame_class)
   const isOrigin = useSearchStore((s) => s.originKey) === key
   const cardRef = useRef(null)
+  // hover right / left half: play the next / previous keyframes; leave: back to this frame
+  const { preview, onMouseMove, onMouseLeave } = useHoverScrub(record, mediaConfig?.image_base_url)
 
   useEffect(() => {
     if (isOrigin) {
@@ -61,7 +64,7 @@ export default function Thumbnail({ record, mediaConfig, index, onClick }) {
       onClick={onClick}
       title={transcript || undefined}
     >
-      <figure className="relative group">
+      <figure className="relative group" onMouseMove={onMouseMove} onMouseLeave={onMouseLeave}>
         {index != null && (
           // Badge colour encodes frame_class (legacy drew it as a border).
           <span
@@ -71,20 +74,30 @@ export default function Thumbnail({ record, mediaConfig, index, onClick }) {
             {index}
           </span>
         )}
+        {preview && (
+          <span
+            className="badge badge-neutral badge-sm absolute top-2 left-2 z-10 gap-0.5 opacity-90"
+            title={`Preview of keyframe ${preview.frame}. Clicking and the buttons still use this result's frame, ${record.keyframe_id}.`}
+          >
+            {preview.dir < 0 && <ChevronsLeft size={12} />}
+            {preview.frame}
+            {preview.dir > 0 && <ChevronsRight size={12} />}
+          </span>
+        )}
         {record.chainId != null && (
           <span className="badge badge-primary badge-sm absolute bottom-2 left-2 z-10">
             event {record.chainPosition + 1}/{record.chainLength}
           </span>
         )}
         <img
-          src={src || fallback}
+          src={preview?.url || src || fallback}
           alt={label}
           loading="lazy"
           className="aspect-video w-full object-cover bg-base-200"
           onError={(e) => {
             // a tunnel drop can fail one image: retry it once before the placeholder
             const img = e.target
-            if (img.src === fallback) return
+            if (preview || img.src === fallback) return
             if (src && !img.dataset.retried) {
               img.dataset.retried = '1'
               setTimeout(() => {
@@ -99,7 +112,7 @@ export default function Thumbnail({ record, mediaConfig, index, onClick }) {
         {/* Region-crop matches (CCTV): boxes that made this frame match. The
             frame and source are both 16:9, so object-cover does not crop and the
             normalised bboxes map straight onto the figure. */}
-        {Array.isArray(record.regions) && record.regions.length > 0 && (
+        {!preview && Array.isArray(record.regions) && record.regions.length > 0 && (
           <svg
             viewBox="0 0 1 1"
             preserveAspectRatio="none"
