@@ -34,7 +34,10 @@ MAIN_COLLECTION = "PUMPKING_SIGLIP_V2"
 REGION_K = int(os.getenv("REGION_K", "400"))          # region hits to pull
 REGION_WEIGHT = float(os.getenv("REGION_WEIGHT", "1.0"))  # region score weight in fusion
 REGION_MAX_BOXES = int(os.getenv("REGION_MAX_BOXES", "6"))  # boxes kept per frame for UI
-REGION_ENABLED = os.getenv("REGION_ENABLED", "1") != "0"
+# OFF since 2026-09-25: an A/B on 15 CCTV queries showed the crops REPLACE the frame
+# results instead of adding to them (big obvious matches lost, tiny/edge crops as false
+# hits); the collection was deleted. REGION_ENABLED=1 plus a re-ingest brings it back.
+REGION_ENABLED = os.getenv("REGION_ENABLED", "0") == "1"
 
 _state = {"ready": None, "checked": 0.0}  # None = unknown; False is re-checked every 60 s
 

@@ -89,8 +89,9 @@ not re-sort (doc comment [o]).
 - **`object` and `return_object` are gone from the default response** (doc
   comment [k]) — the field was empty when it was dropped. It is now populated in
   the *payload* for batch-1 `N` (CCTV) frames (`{bbox,object,conf}` per
-  detection, from the region pipeline), and region-fused CCTV hits carry a
-  `regions` array of the matched crops (bbox + label) for the UI to draw. Index
+  detection, from the region pipeline). Region-crop fusion (a `regions` array of
+  matched crops on CCTV hits) was switched off and its collection deleted on
+  2026-09-25 (it displaced the frame results), so `regions` is absent. Index
   size is now 526,656 points (batch 0 + AIC-2026 batch 1).
 - **`frame_path` / `video_path` are gone** (doc comments [p]/[t]). Records carry
   identifiers only; clients build media URLs from `GET /hub/media_config`.

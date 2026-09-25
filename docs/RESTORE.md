@@ -8,7 +8,7 @@ transcripts) and the videos are all on the drive.
 <drive>/random42/
 ├── migration/                  what restore.sh copies to the new PC's local disk
 │   ├── RESTORE.md  restore.sh  MANIFEST.txt      (this doc, the script, file counts)
-│   ├── qdrant_storage/         PUMPKING_SIGLIP_V2 902,050 pts (+ PUMPKING_SIGLIP_REGIONS)
+│   ├── qdrant_storage/         PUMPKING_SIGLIP_V2 902,050 pts
 │   ├── qdrant_jina_storage/    EXPERT_B_V1 (optional second model, not started)
 │   ├── hf_cache/               SigLIP2-giant (+ jina, + the s2t models)
 │   └── docker-images/          random42-aic.tar, support-images.tar (qdrant, nginx, bun,
